@@ -1,0 +1,211 @@
+{
+  "info": {
+    "name": "Curis SMART Simulator",
+    "description": "Drives the curis-smart-simulator end-to-end.\n\nSetup:\n1. Import this collection AND the matching environment file (curis-smart-simulator.postman_environment.json).\n2. Edit the environment: set `smart_outbound_secret` to the same hex Curis has in `operators.smart_outbound_secret`, and `curis_inbound_secret` to the same hex Curis has in `operators.smart_webhook_secret` for the operator you're targeting.\n3. Boot the simulator (`npm start` in curis-smart-simulator) and Curis BE (`go run . serve`).\n\nThe `Inbound (Curis → SMART)` folder simulates Curis pushing events to SMART — every request has a pre-request script that HMAC-signs the body with `smart_outbound_secret` and attaches `X-Curis-Signature`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health & State",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{sim_base_url}}/health", "host": ["{{sim_base_url}}"], "path": ["health"] }
+          }
+        },
+        {
+          "name": "GET /sim/state",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{sim_base_url}}/sim/state", "host": ["{{sim_base_url}}"], "path": ["sim", "state"] }
+          }
+        },
+        {
+          "name": "GET /sim/events?limit=20",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{sim_base_url}}/sim/events?limit=20",
+              "host": ["{{sim_base_url}}"],
+              "path": ["sim", "events"],
+              "query": [{ "key": "limit", "value": "20" }]
+            }
+          }
+        },
+        {
+          "name": "GET /sim/scenarios",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{sim_base_url}}/sim/scenarios", "host": ["{{sim_base_url}}"], "path": ["sim", "scenarios"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Outbound (SMART → Curis)",
+      "description": "Tells the simulator to fire a claim at Curis. The simulator signs the payload with `curis_inbound_secret` (its CURIS_INBOUND_SECRET env) and POSTs to /api/v1/smart/{operator_code}/claims on Curis.",
+      "item": [
+        {
+          "name": "POST /sim/fire/claim (scenario)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"happy-outpatient\"\n}"
+            },
+            "url": { "raw": "{{sim_base_url}}/sim/fire/claim", "host": ["{{sim_base_url}}"], "path": ["sim", "fire", "claim"] }
+          }
+        },
+        {
+          "name": "POST /sim/fire/claim (custom payload)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payload\": {\n    \"scheme_code\": \"jalinsure-2026\",\n    \"member_number\": \"JALISONS-MEM-00038\",\n    \"provider_code\": \"nairobi\",\n    \"claim_number\": \"SMART-DEMO-{{$timestamp}}\",\n    \"claim_type\": \"outpatient\",\n    \"visit_date\": \"2026-06-24\",\n    \"external_visit_id\": \"VISIT-{{$timestamp}}\",\n    \"diagnosis_codes\": [\"J06.9\"],\n    \"lines\": [\n      {\n        \"service_code\": \"CONSULT-GP\",\n        \"service_name\": \"GP consultation\",\n        \"quantity\": 1,\n        \"unit_price\": 1500,\n        \"amount_claimed\": 1500\n      }\n    ]\n  }\n}"
+            },
+            "url": { "raw": "{{sim_base_url}}/sim/fire/claim", "host": ["{{sim_base_url}}"], "path": ["sim", "fire", "claim"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Inbound (Curis → SMART)",
+      "description": "Simulates Curis pushing events to SMART. Every request runs a pre-request script that HMAC-signs the raw body with `smart_outbound_secret` and attaches `X-Curis-Signature`. Use these to verify the simulator without driving the BE.",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Sign the request body with smart_outbound_secret and attach X-Curis-Signature.",
+              "// Mirrors what Curis-Back/internal/services/smart_emitter.go does on real outbound events.",
+              "const secret = pm.environment.get('smart_outbound_secret');",
+              "if (!secret) { throw new Error('Set smart_outbound_secret in the environment'); }",
+              "let body = pm.request.body && pm.request.body.raw ? pm.request.body.raw : '';",
+              "// Substitute Postman variables (e.g. {{$guid}}) before hashing — pm.variables.replaceIn evaluates the same syntax.",
+              "body = pm.variables.replaceIn(body);",
+              "// Re-set the request body to the substituted value so what we hash is what we send.",
+              "pm.request.body.raw = body;",
+              "const sig = CryptoJS.HmacSHA256(body, secret).toString(CryptoJS.enc.Hex);",
+              "pm.request.headers.upsert({ key: 'X-Curis-Signature', value: sig });",
+              "pm.request.headers.upsert({ key: 'Content-Type', value: 'application/json' });"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "POST /scheme/activated",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"event_version\": 1,\n  \"event\": \"scheme.activated\",\n  \"emitted_at\": \"2026-06-24T10:00:00Z\",\n  \"scheme_code\": \"jalinsure-2026\",\n  \"scheme_name\": \"Jalinsure\",\n  \"status\": \"active\",\n  \"currency\": \"KES\",\n  \"policy_start\": \"2026-06-01\",\n  \"policy_end\": \"2027-06-01\",\n  \"effective_at\": \"2026-06-24T10:00:00Z\",\n  \"tiers\": [\n    {\n      \"tier_code\": \"execs\",\n      \"tier_name\": \"Les executives\",\n      \"display_order\": 1,\n      \"benefits\": [\n        { \"category\": \"outpatient\", \"annual_limit\": 600, \"per_visit_limit\": null, \"copay_percent\": null, \"copay_flat\": null, \"waiting_period_days\": 0 }\n      ]\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{sim_base_url}}/smart/webhooks/scheme/activated", "host": ["{{sim_base_url}}"], "path": ["smart", "webhooks", "scheme", "activated"] }
+          }
+        },
+        {
+          "name": "POST /scheme/cancelled",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"event_version\": 1,\n  \"event\": \"scheme.cancelled\",\n  \"scheme_code\": \"jalinsure-2026\",\n  \"status\": \"cancelled\",\n  \"effective_at\": \"2026-06-24T10:00:00Z\",\n  \"reason\": \"Operator cancelled the policy\"\n}"
+            },
+            "url": { "raw": "{{sim_base_url}}/smart/webhooks/scheme/cancelled", "host": ["{{sim_base_url}}"], "path": ["smart", "webhooks", "scheme", "cancelled"] }
+          }
+        },
+        {
+          "name": "POST /scheme/tier/updated",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"event_version\": 1,\n  \"event\": \"scheme.tier.updated\",\n  \"scheme_code\": \"jalinsure-2026\",\n  \"tier_code\": \"execs\",\n  \"benefits\": [\n    { \"category\": \"outpatient\", \"annual_limit\": 800, \"waiting_period_days\": 0 },\n    { \"category\": \"inpatient\", \"annual_limit\": 5000, \"waiting_period_days\": 0 }\n  ]\n}"
+            },
+            "url": { "raw": "{{sim_base_url}}/smart/webhooks/scheme/tier/updated", "host": ["{{sim_base_url}}"], "path": ["smart", "webhooks", "scheme", "tier", "updated"] }
+          }
+        },
+        {
+          "name": "POST /member/enrolled",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"event_version\": 1,\n  \"event\": \"member.enrolled\",\n  \"scheme_code\": \"jalinsure-2026\",\n  \"tier_code\": \"execs\",\n  \"member_number\": \"JALISONS-MEM-00099\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"Member\",\n  \"balances\": { \"outpatient\": 600, \"inpatient\": 5000 }\n}"
+            },
+            "url": { "raw": "{{sim_base_url}}/smart/webhooks/member/enrolled", "host": ["{{sim_base_url}}"], "path": ["smart", "webhooks", "member", "enrolled"] }
+          }
+        },
+        {
+          "name": "POST /member/terminated",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"event_version\": 1,\n  \"event\": \"member.terminated\",\n  \"scheme_code\": \"jalinsure-2026\",\n  \"member_number\": \"JALISONS-MEM-00099\",\n  \"status\": \"terminated\",\n  \"reason\": \"Left employment\"\n}"
+            },
+            "url": { "raw": "{{sim_base_url}}/smart/webhooks/member/terminated", "host": ["{{sim_base_url}}"], "path": ["smart", "webhooks", "member", "terminated"] }
+          }
+        },
+        {
+          "name": "POST /claim/adjudicated",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"event_version\": 1,\n  \"event\": \"claim.adjudicated\",\n  \"claim_number\": \"SMART-DEMO-0001\",\n  \"lines\": [\n    { \"service_code\": \"CONSULT-GP\", \"amount_claimed\": 1500, \"amount_approved\": 1500, \"status\": \"approved\" }\n  ]\n}"
+            },
+            "url": { "raw": "{{sim_base_url}}/smart/webhooks/claim/adjudicated", "host": ["{{sim_base_url}}"], "path": ["smart", "webhooks", "claim", "adjudicated"] }
+          }
+        },
+        {
+          "name": "POST /claim/paid",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"{{$guid}}\",\n  \"event_version\": 1,\n  \"event\": \"claim.paid\",\n  \"claim_number\": \"SMART-DEMO-0001\",\n  \"paid_amount\": 1500,\n  \"payment_ref\": \"BANK-TX-2026-06-24-0001\",\n  \"scheme_code\": \"jalinsure-2026\",\n  \"member_number\": \"JALISONS-MEM-00038\",\n  \"new_balances\": { \"outpatient\": 598500 }\n}"
+            },
+            "url": { "raw": "{{sim_base_url}}/smart/webhooks/claim/paid", "host": ["{{sim_base_url}}"], "path": ["smart", "webhooks", "claim", "paid"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Negative tests",
+      "description": "Sanity checks: bad signature → 401, duplicate event_id → 200 deduped.",
+      "item": [
+        {
+          "name": "Bad signature → 401",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Curis-Signature", "value": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_id\": \"will-not-be-applied\",\n  \"event_version\": 1,\n  \"event\": \"scheme.activated\",\n  \"scheme_code\": \"nope\"\n}"
+            },
+            "url": { "raw": "{{sim_base_url}}/smart/webhooks/scheme/activated", "host": ["{{sim_base_url}}"], "path": ["smart", "webhooks", "scheme", "activated"] }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": []
+}

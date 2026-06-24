@@ -1,0 +1,19 @@
+{
+  "name": "curis-smart-simulator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Headless SMART simulator: receives Curis→SMART webhooks and fires SMART→Curis claim submissions.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.5.0",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.8.5"
+  }
+}

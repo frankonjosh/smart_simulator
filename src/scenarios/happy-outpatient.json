@@ -1,0 +1,20 @@
+{
+  "scheme_code": "jalinsure-2026",
+  "member_number": "JALISONS-MEM-00038",
+  "provider_code": "nairobi",
+  "claim_number": "SMART-DEMO-0001",
+  "claim_type": "outpatient",
+  "visit_date": "2026-06-24",
+  "external_visit_id": "SIM-VISIT-0001",
+  "diagnosis_codes": ["J06.9"],
+  "notes": "Smoke test from curis-smart-simulator",
+  "lines": [
+    {
+      "service_code": "CONSULT-GP",
+      "service_name": "GP consultation",
+      "quantity": 1,
+      "unit_price": 1500,
+      "amount_claimed": 1500
+    }
+  ]
+}
