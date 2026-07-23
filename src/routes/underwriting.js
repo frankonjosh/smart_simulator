@@ -17,7 +17,7 @@ export function registerUnderwriting(app) {
                 pol_type_id=excluded.pol_type_id,
                 policy_currency_id=excluded.policy_currency_id,
                 country=excluded.country
-        `).run(companyName, clnPolCode, startDate, endDate, parseInt(polTypeId || '1', 10), policyCurrencyId, country);
+        `).run(clnPolCode, companyName, startDate, endDate, parseInt(polTypeId || '1', 10), policyCurrencyId, country);
         info('scheme defined', { clnPolCode });
         return reply.send(smartOK(clnPolCode));
     });

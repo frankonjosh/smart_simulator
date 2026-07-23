@@ -17,21 +17,27 @@ export function registerSimHelpers(app) {
     });
 
     // POST /sim/seed/claim — insert one seeded claim.
+    // Uses payload.claim_id as the row PK so markback (which addresses
+    // by the payload's claim_id) can find the row later.
     app.post('/sim/seed/claim', async (req, reply) => {
         const { country = 'KE', payload } = req.body || {};
         if (!payload) return reply.status(400).send({ error: 'missing payload' });
-        const result = db.prepare(`INSERT INTO seeded_claims (payload, country) VALUES (?, ?)`)
-                         .run(JSON.stringify(payload), country);
-        return reply.send({ claim_id: result.lastInsertRowid, country });
+        if (!payload.claim_id) return reply.status(400).send({ error: 'missing payload.claim_id' });
+        db.prepare(`INSERT INTO seeded_claims (claim_id, payload, country) VALUES (?, ?, ?)`)
+          .run(payload.claim_id, JSON.stringify(payload), country);
+        return reply.send({ claim_id: payload.claim_id, country });
     });
 
     // POST /sim/seed/preauth — insert one seeded preauth.
+    // Uses payload's Id/id as the row PK so markback can find it.
     app.post('/sim/seed/preauth', async (req, reply) => {
         const { country = 'KE', payload } = req.body || {};
         if (!payload) return reply.status(400).send({ error: 'missing payload' });
-        const result = db.prepare(`INSERT INTO seeded_preauths (payload, country) VALUES (?, ?)`)
-                         .run(JSON.stringify(payload), country);
-        return reply.send({ preauth_id: result.lastInsertRowid, country });
+        const preauthId = payload.Id || payload.id;
+        if (!preauthId) return reply.status(400).send({ error: 'missing payload.Id' });
+        db.prepare(`INSERT INTO seeded_preauths (preauth_id, payload, country) VALUES (?, ?, ?)`)
+          .run(preauthId, JSON.stringify(payload), country);
+        return reply.send({ preauth_id: preauthId, country });
     });
 
     // POST /sim/reset — nuke every table (idempotent, dev-only).
