@@ -1,108 +1,54 @@
 # curis-smart-simulator
 
-Headless simulator for the SMART integration. Pretends to be SMART so we can
-develop Curis's bi-directional contract end-to-end without a live SMART tenant.
+Headless simulator that mimics SMART's REST API v2 so Curis can develop
+against a real OAuth + REST flow without a live SMART tenant.
 
-## Two directions
+## Running
 
-| Direction | Endpoint | Auth header | Secret |
-|---|---|---|---|
-| SMART → Curis (claims submission) | `POST /api/v1/smart/{operator_code}/claims` on Curis | `X-Smart-Signature` | `CURIS_INBOUND_SECRET` |
-| Curis → SMART (state mirroring) | `POST /smart/webhooks/...` on the simulator | `X-Curis-Signature` | `SMART_OUTBOUND_SECRET` |
+    npm install
+    npm run dev      # node --watch on src/server.js
 
-The simulator listens for the seven Curis → SMART events agreed in the
-[SMART simulator plan][plan]:
+Default port is `6021`. Set `DB_FILE` to override the SQLite path
+(defaults to `./data/sim.db`).
 
-- `scheme.activated`, `scheme.cancelled`, `scheme.tier.updated`
-- `member.enrolled`, `member.terminated`
-- `claim.adjudicated`, `claim.paid`
+## OAuth handshake
 
-Every push is signature-verified, deduped by `event_id`, applied to a
-SQLite-backed shadow, and recorded in the `events` audit table.
+    POST /oauth/token?grant_type=client_credentials&client_id=X&client_secret=Y
 
-## Storage
+Any non-empty `(client_id, client_secret)` pair is accepted in dev.
+Response: `{ access_token, token_type: "bearer", expires_in: 7200 }`.
 
-A single SQLite file at `DB_FILE` (default `./data/sim.db`) holds
-everything:
+Every non-/oauth call must carry `Authorization: Bearer <token>`.
 
-| Table | What it holds |
-|---|---|
-| `schemes`, `members`, `claims` | Shadow of "what SMART knows" (mirror of Curis state) |
-| `events` | Full audit log — every inbound + outbound call, success or failure |
-| `seen_event_ids` | Idempotency guard; survives restarts so retries always dedupe |
-| `schema_migrations` | Tracks which `migrations/*.sql` have been applied |
+## SMART endpoints implemented
 
-Schema lives in `migrations/` and is applied at boot. To start clean,
-stop the simulator and `rm -rf data/`.
+**Underwriting:** `/schemes`, `/schemes/renewals`, `/schemes/activation`,
+`/scheme/deactivations`, `/benefitCategories`, `/benefits`, `/bulk/benefits`,
+`/benefit/rules`, `/benefit/activation`, `/benefit/deactivation`,
+`/members`, `/members/cardreprints`, `/scheme/member/migration`,
+`/member/renewals`, `/members/categorychange`, `/members/activations`,
+`/bulk/members/activations`, `/members/deactivations`,
+`/members/fingerprintremoval`, `/members/changes`, `/members/moneyaddition`,
+`/members/moneyreduction`.
 
-[plan]: ../../memory/project_smart_simulator.md
+**Copay + Remittance:** `/copay/setup`, `/edi/open/batch`,
+`/edi/close/batch`, `/edi/batch/invoice/add`, `/edi/batch/invoice/tracking`,
+`/edi/batch/pay`.
 
-## Run
+**Claims + Preauth:** `/claims/edi`, `/claims/edi/status`, `/preauth/fetch`,
+`/preauth/item/markback`, `/preauth/markback`.
 
-```bash
-cp .env .env       # then fill in the two HMAC secrets
-npm install
-npm run dev                # node --watch on src/server.js
-```
+## Test helpers (not SMART's contract)
 
-Default port is `6021` (Curis BE is 6011, FE is 6010).
+    GET  /health
+    GET  /sim/state
+    POST /sim/seed/claim     { country?, payload }
+    POST /sim/seed/preauth   { country?, payload }
+    POST /sim/reset
 
-## Inbound endpoints (Curis pushes here)
+`/sim/seed/claim` inserts a fully-formed SMART claim payload into
+`seeded_claims`. The next `/claims/edi` poll picks it up.
 
-```
-POST /smart/webhooks/scheme/activated
-POST /smart/webhooks/scheme/cancelled
-POST /smart/webhooks/scheme/tier/updated
-POST /smart/webhooks/member/enrolled
-POST /smart/webhooks/member/terminated
-POST /smart/webhooks/claim/adjudicated
-POST /smart/webhooks/claim/paid
-```
+## Reset
 
-Each expects:
-
-- `Content-Type: application/json`
-- `X-Curis-Signature: <hex(HMAC-SHA256(SMART_OUTBOUND_SECRET, body))>`
-- Body MUST carry `event_id` (string) and `event_version` (number, currently `1`).
-
-Returns `202` on apply, `200` with `{ deduped: true }` on duplicate, `401`
-on bad signature.
-
-## Outbound (fire claims at Curis)
-
-```bash
-# Bundled scenario
-curl -X POST http://localhost:6021/sim/fire/claim \
-  -H 'Content-Type: application/json' \
-  -d '{"scenario":"happy-outpatient"}'
-
-# Arbitrary payload
-curl -X POST http://localhost:6021/sim/fire/claim \
-  -H 'Content-Type: application/json' \
-  -d '{"payload":{"scheme_code":"jalinsure-2026", ... }}'
-```
-
-The response is Curis's response verbatim (status code passed through).
-
-## Debug
-
-```
-GET /health            → liveness
-GET /sim/state         → current shadow (schemes, members, claims, counts)
-GET /sim/events?limit  → last N log lines
-GET /sim/scenarios     → list bundled scenario fixtures
-```
-
-## Postman collection
-
-Import `postman/curis-smart-simulator.postman_collection.json` and the
-matching environment file from the same folder. The collection covers
-health checks, firing claims at Curis, and simulating every Curis → SMART
-event with HMAC signing handled by a pre-request script. See
-`postman/README.md` for setup.
-
-## Adding scenarios
-
-Drop `src/scenarios/<name>.json` matching the Curis `smartWebhookPayload`
-shape from `Curis-Back/internal/handlers/smart_webhook.go`. The file name
-(without `.json`) becomes the `scenario` parameter.
+    rm -rf data && npm start
