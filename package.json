@@ -9,7 +9,8 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "reset-db": "rm -rf data && node src/server.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.5.0",

@@ -1,50 +1,51 @@
-import Fastify from "fastify";
-import { config } from "./config.js";
-import { registerInbound } from "./routes/inbound.js";
-import { registerOutbound } from "./routes/outbound.js";
-import { registerDebug } from "./routes/debug.js";
+// Fastify server. Registers all routes, mounts OAuth (open) and every
+// resource endpoint behind requireToken, plus /sim helpers open.
+import Fastify from 'fastify';
+import { db } from './store/db.js';
+import { issueToken, requireToken } from './auth/token.js';
+import { registerUnderwriting } from './routes/underwriting.js';
+import { registerCopay } from './routes/copay.js';
+import { registerRemittance } from './routes/remittance.js';
+import { registerClaims } from './routes/claims.js';
+import { registerPreauth } from './routes/preauth.js';
+import { registerSimHelpers } from './routes/sim.js';
+import { info } from './util/log.js';
 
-// Capture the raw body alongside the parsed JSON so HMAC verification
-// hashes the exact bytes Curis signed (whitespace + key order preserved).
-async function buildServer() {
-  const app = Fastify({ logger: { level: "info" } });
+const PORT = Number(process.env.PORT || 6021);
 
-  app.addContentTypeParser(
-    "application/json",
-    { parseAs: "string" },
-    (req, body, done) => {
-      req.rawBody = body;
-      try {
-        done(null, body.length ? JSON.parse(body) : {});
-      } catch (err) {
-        err.statusCode = 400;
-        done(err, undefined);
-      }
-    },
-  );
+const app = Fastify({ logger: false });
 
-  await registerDebug(app);
-  await registerInbound(app);
-  await registerOutbound(app);
+// Audit every request.
+app.addHook('onResponse', async (req, reply) => {
+    try {
+        db.prepare(`INSERT INTO events (method, path, status, body) VALUES (?, ?, ?, ?)`)
+          .run(req.method, req.url, reply.statusCode, JSON.stringify(req.body || null));
+    } catch (_) {}
+});
 
-  return app;
-}
+// Health — open.
+app.get('/health', async (_req, reply) => reply.send({ status: 'ok', service: 'curis-smart-simulator' }));
 
-const app = await buildServer();
+// OAuth — open.
+app.post('/oauth/token', issueToken);
+app.post('/auth/oauth/token', issueToken);
 
-try {
-  await app.listen({ port: config.port, host: "0.0.0.0" });
-  app.log.info(
-    {
-      port: config.port,
-      log_file: config.logFile,
-      curis: config.curisBaseUrl,
-      inbound_secret_set: Boolean(config.smartOutboundSecret),
-      outbound_secret_set: Boolean(config.curisInboundSecret),
-    },
-    "curis-smart-simulator ready",
-  );
-} catch (err) {
-  app.log.error(err);
-  process.exit(1);
-}
+// Sim helpers — open (dev only).
+registerSimHelpers(app);
+
+// All resource endpoints require a valid bearer token.
+app.register(async (scoped) => {
+    scoped.addHook('preHandler', requireToken);
+    registerUnderwriting(scoped);
+    registerCopay(scoped);
+    registerRemittance(scoped);
+    registerClaims(scoped);
+    registerPreauth(scoped);
+});
+
+app.listen({ host: '0.0.0.0', port: PORT }).then(() => {
+    info('sim listening', { port: PORT });
+}).catch((err) => {
+    console.error(err);
+    process.exit(1);
+});
