@@ -9,11 +9,17 @@ import { registerRemittance } from './routes/remittance.js';
 import { registerClaims } from './routes/claims.js';
 import { registerPreauth } from './routes/preauth.js';
 import { registerSimHelpers } from './routes/sim.js';
+import { registerEntra } from './routes/entra.js';
 import { info } from './util/log.js';
 
 const PORT = Number(process.env.PORT || 6021);
 
 const app = Fastify({ logger: false });
+
+// Entra's /token endpoint uses application/x-www-form-urlencoded (from
+// golang.org/x/oauth2). Fastify won't parse it without a plugin — take
+// it as raw text; the mock parses it manually.
+app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => done(null, body));
 
 // Audit every request.
 app.addHook('onResponse', async (req, reply) => {
@@ -32,6 +38,9 @@ app.post('/auth/oauth/token', issueToken);
 
 // Sim helpers — open (dev only).
 registerSimHelpers(app);
+
+// Mock Entra ID (open — it IS the token issuer, so requireToken doesn't apply).
+registerEntra(app);
 
 // All resource endpoints require a valid bearer token.
 app.register(async (scoped) => {
