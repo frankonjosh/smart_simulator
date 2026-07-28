@@ -1,11 +1,13 @@
 import { db } from '../store/db.js';
 import { smartOK, smartError } from '../util/response.js';
 import { info } from '../util/log.js';
+import { pickCountry } from '../util/params.js';
 
 export function registerUnderwriting(app) {
     // POST /schemes
     app.post('/schemes', async (req, reply) => {
-        const { companyName, clnPolCode, startDate, endDate, polTypeId, policyCurrencyId, country } = req.query;
+        const { companyName, clnPolCode, startDate, endDate, polTypeId, policyCurrencyId } = req.query;
+        const country = pickCountry(req.query);
         if (!clnPolCode || !companyName) return reply.status(400).send(smartError('5200', 'missing fields'));
         db.prepare(`
             INSERT INTO schemes (cln_pol_code, company_name, start_date, end_date, pol_type_id, policy_currency_id, country)
@@ -40,7 +42,8 @@ export function registerUnderwriting(app) {
     });
 
     app.post('/benefitCategories', async (req, reply) => {
-        const { clnPolCode, clnCatCode, catDesc, country } = req.query;
+        const { clnPolCode, clnCatCode, catDesc } = req.query;
+        const country = pickCountry(req.query);
         db.prepare(`
             INSERT INTO categories (cln_pol_code, cln_cat_code, cat_desc, country)
             VALUES (?, ?, ?, ?)
@@ -51,6 +54,7 @@ export function registerUnderwriting(app) {
 
     app.post('/benefits', async (req, reply) => {
         const q = req.query;
+        const country = pickCountry(q);
         db.prepare(`
             INSERT INTO benefits (cln_pol_code, cat_code, cln_ben_code, benefit_desc, sub_limit_amt, service_type, country)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -58,12 +62,13 @@ export function registerUnderwriting(app) {
                 benefit_desc=excluded.benefit_desc,
                 sub_limit_amt=excluded.sub_limit_amt,
                 service_type=excluded.service_type
-        `).run(q.clnPolCode, q.catCode, q.clnBenCode, q.benefitDesc, parseInt(q.subLimitAmt || '0', 10), parseInt(q.serviceType || '1', 10), q.country);
+        `).run(q.clnPolCode, q.catCode, q.clnBenCode, q.benefitDesc, parseInt(q.subLimitAmt || '0', 10), parseInt(q.serviceType || '1', 10), country);
         return reply.send(smartOK(q.clnBenCode));
     });
 
     app.post('/bulk/benefits', async (req, reply) => {
         const q = req.query;
+        const country = pickCountry(q);
         db.prepare(`
             INSERT INTO benefits (cln_pol_code, cat_code, cln_ben_code, benefit_desc, sub_limit_amt, service_type, country)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -71,7 +76,7 @@ export function registerUnderwriting(app) {
                 benefit_desc=excluded.benefit_desc,
                 sub_limit_amt=excluded.sub_limit_amt,
                 service_type=excluded.service_type
-        `).run(q.clnPolCode, q.catCode, q.clnBenCode, q.benefitDesc, parseInt(q.subLimitAmt || '0', 10), parseInt(q.serviceType || '1', 10), q.country);
+        `).run(q.clnPolCode, q.catCode, q.clnBenCode, q.benefitDesc, parseInt(q.subLimitAmt || '0', 10), parseInt(q.serviceType || '1', 10), country);
         return reply.send(smartOK(q.clnBenCode));
     });
 
@@ -94,6 +99,7 @@ export function registerUnderwriting(app) {
 
     app.post('/members', async (req, reply) => {
         const q = req.query;
+        const country = pickCountry(q);
         db.prepare(`
             INSERT INTO members (membership_number, cln_pol_code, cln_cat_code, family_code, mem_type, surname, second_name, dob, gender, phone_number, email_address, country)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -108,7 +114,7 @@ export function registerUnderwriting(app) {
                 gender=excluded.gender,
                 phone_number=excluded.phone_number,
                 email_address=excluded.email_address
-        `).run(q.membershipNumber, q.clnPolCode, q.clnCatCode, q.familyCode, q.memType, q.surname, q.secondName, q.dob, q.gender, q.phone_number || null, q.email_address || null, q.country);
+        `).run(q.membershipNumber, q.clnPolCode, q.clnCatCode, q.familyCode, q.memType, q.surname, q.secondName, q.dob, q.gender, q.phone_number || null, q.email_address || null, country);
         info('member enrolled', { membershipNumber: q.membershipNumber });
         return reply.send(smartOK(q.membershipNumber));
     });
@@ -162,19 +168,21 @@ export function registerUnderwriting(app) {
 
     app.post('/members/moneyaddition', async (req, reply) => {
         const q = req.query;
+        const country = pickCountry(q);
         db.prepare(`
             INSERT INTO money_movements (member_number, benefit_code, amount, return_code, return_reason, invoice_id, country)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(q.memberNumber, q.benefitCode, parseFloat(q.returnedAmount || '0'), q.returnCode || '16', q.returnReason, q.invoiceId, q.country);
+        `).run(q.memberNumber, q.benefitCode, parseFloat(q.returnedAmount || '0'), q.returnCode || '16', q.returnReason, q.invoiceId, country);
         return reply.send(smartOK(q.invoiceId));
     });
 
     app.post('/members/moneyreduction', async (req, reply) => {
         const q = req.query;
+        const country = pickCountry(q);
         db.prepare(`
             INSERT INTO money_movements (member_number, benefit_code, amount, return_code, return_reason, invoice_id, country)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(q.memberNumber, q.benefitCode, parseFloat(q.returnedAmount || '0'), q.returnCode || '17', q.returnReason, q.invoiceId, q.country);
+        `).run(q.memberNumber, q.benefitCode, parseFloat(q.returnedAmount || '0'), q.returnCode || '17', q.returnReason, q.invoiceId, country);
         return reply.send(smartOK(q.invoiceId));
     });
 }

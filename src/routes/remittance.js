@@ -1,5 +1,6 @@
 import { db } from '../store/db.js';
 import { smartOK } from '../util/response.js';
+import { pickCountry } from '../util/params.js';
 
 export function registerRemittance(app) {
     app.post('/edi/open/batch', async (req, reply) => {
@@ -7,7 +8,7 @@ export function registerRemittance(app) {
         db.prepare(`
             INSERT INTO batches (integ_batch_code, integ_prov_code, integ_app_code, status, country)
             VALUES (?, ?, ?, 'open', ?)
-        `).run(q.integ_batch_code, q.integ_prov_code, q.integ_app_code, q.country_code);
+        `).run(q.integ_batch_code, q.integ_prov_code, q.integ_app_code, pickCountry(q));
         return reply.send(smartOK(q.integ_batch_code));
     });
 

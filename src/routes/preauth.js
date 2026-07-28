@@ -1,12 +1,13 @@
 import { db } from '../store/db.js';
 import { smartOK } from '../util/response.js';
 import { info } from '../util/log.js';
+import { pickCountry } from '../util/params.js';
 
 export function registerPreauth(app) {
     // GET /preauth/fetch — return ready preauths.
     app.get('/preauth/fetch', async (req, reply) => {
         const limit = parseInt(req.query.limit || '100', 10);
-        const country = req.query.country || 'KE';
+        const country = pickCountry(req.query) || 'KE';
 
         const rows = db.prepare(`
             SELECT preauth_id, payload FROM seeded_preauths

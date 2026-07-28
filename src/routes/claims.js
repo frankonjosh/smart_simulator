@@ -1,13 +1,14 @@
 import { db } from '../store/db.js';
 import { smartOK } from '../util/response.js';
 import { info } from '../util/log.js';
+import { pickCountry } from '../util/params.js';
 
 export function registerClaims(app) {
     // POST /claims/edi — return ready seeded claims for the country.
     app.post('/claims/edi', async (req, reply) => {
         const limit = parseInt(req.query.limit || '100', 10);
         const isUpdate = req.query.isUpdate === 'true';
-        const country = req.query.country || 'KE';
+        const country = pickCountry(req.query) || 'KE';
 
         const rows = db.prepare(`
             SELECT claim_id, payload FROM seeded_claims
