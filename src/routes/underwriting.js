@@ -6,22 +6,32 @@ import { pickCountry } from '../util/params.js';
 export function registerUnderwriting(app) {
     // POST /schemes
     app.post('/schemes', async (req, reply) => {
-        const { companyName, clnPolCode, startDate, endDate, polTypeId, policyCurrencyId } = req.query;
-        const country = pickCountry(req.query);
-        if (!clnPolCode || !companyName) return reply.status(400).send(smartError('5200', 'missing fields'));
-        db.prepare(`
-            INSERT INTO schemes (cln_pol_code, company_name, start_date, end_date, pol_type_id, policy_currency_id, country)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+        const q = req.query;
+        const country = pickCountry(q);
+        if (!q.clnPolCode || !q.companyName) return reply.status(400).send(smartError('5200', 'missing fields'));
+        const result = db.prepare(`
+            INSERT INTO schemes (cln_pol_code, company_name, start_date, end_date, pol_type_id, policy_currency_id, country, user_id, anniv, customerid)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(cln_pol_code) DO UPDATE SET
                 company_name=excluded.company_name,
                 start_date=excluded.start_date,
                 end_date=excluded.end_date,
                 pol_type_id=excluded.pol_type_id,
                 policy_currency_id=excluded.policy_currency_id,
-                country=excluded.country
-        `).run(clnPolCode, companyName, startDate, endDate, parseInt(polTypeId || '1', 10), policyCurrencyId, country);
-        info('scheme defined', { clnPolCode });
-        return reply.send(smartOK(clnPolCode));
+                country=excluded.country,
+                user_id=excluded.user_id,
+                anniv=excluded.anniv,
+                customerid=excluded.customerid,
+                updated_at=datetime('now')
+        `).run(
+            q.clnPolCode, q.companyName, q.startDate, q.endDate,
+            parseInt(q.polTypeId || '1', 10), q.policyCurrencyId, country,
+            q.userId || null,
+            q.anniv != null ? parseInt(q.anniv, 10) : null,
+            q.customerid || null,
+        );
+        info('scheme defined', { clnPolCode: q.clnPolCode, userId: q.userId, anniv: q.anniv });
+        return reply.send(smartOK(q.clnPolCode, result.changes));
     });
 
     app.post('/schemes/renewals', async (req, reply) => {

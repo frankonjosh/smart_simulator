@@ -1,5 +1,7 @@
 // SMART's canonical success shape. Every endpoint returns this on success.
-export function smartOK(id = 'XXXXXX') {
+// `updatedRows` reflects the actual number of rows affected by the write
+// so callers can distinguish create vs. no-op vs. cascade-update.
+export function smartOK(id = 'XXXXXX', updatedRows = 0) {
     return {
         statusCode: '2000',
         successful: true,
@@ -7,7 +9,7 @@ export function smartOK(id = 'XXXXXX') {
         statusCodeType: 'SUCCESSFUL',
         statusCodeMsg: 'successful',
         objectCode: null,
-        updated_rows: 0,
+        updated_rows: updatedRows,
         error_type: '',
         id,
     };

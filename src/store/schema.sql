@@ -6,8 +6,13 @@ CREATE TABLE IF NOT EXISTS schemes (
     pol_type_id        INTEGER,
     policy_currency_id TEXT,
     country            TEXT,
+    -- Guide-mandated fields that real SMART persists per row.
+    user_id            TEXT,     -- userId — who approved sending this to SMART
+    anniv              INTEGER,  -- renewal history indicator (0, 1, 2)
+    customerid         TEXT,     -- API-consumer identifier
     status             TEXT DEFAULT 'active',
-    created_at         TEXT DEFAULT (datetime('now'))
+    created_at         TEXT DEFAULT (datetime('now')),
+    updated_at         TEXT DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS categories (
