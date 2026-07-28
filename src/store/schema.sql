@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS benefit_rules (
 );
 
 CREATE TABLE IF NOT EXISTS copays (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
     integ_scheme_code  TEXT NOT NULL,
     integ_cat_code     TEXT,
     integ_ben_code     TEXT,
@@ -152,26 +153,110 @@ CREATE TABLE IF NOT EXISTS copays (
     integ_service_code TEXT,
     copay_type         INTEGER,
     amount             REAL,
+    customerid         TEXT,   -- §1.3 query param
     country            TEXT,
-    created_at         TEXT DEFAULT (datetime('now'))
+    created_at         TEXT DEFAULT (datetime('now')),
+    updated_at         TEXT DEFAULT (datetime('now')),
+    UNIQUE (integ_scheme_code, integ_cat_code, integ_ben_code, integ_prov_code, integ_service_code)
 );
 
 CREATE TABLE IF NOT EXISTS batches (
     integ_batch_code TEXT PRIMARY KEY,
     integ_prov_code  TEXT,
     integ_app_code   TEXT,
+    integ_user_name  TEXT,   -- §1.4 edi/open/batch — who created the batch
     status           TEXT DEFAULT 'open',
     country          TEXT,
-    created_at       TEXT DEFAULT (datetime('now'))
+    created_at       TEXT DEFAULT (datetime('now')),
+    updated_at       TEXT DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS batch_invoices (
     integ_batch_code TEXT NOT NULL,
     inv_no           TEXT NOT NULL,
+    integ_prov_code  TEXT,    -- integProvCode §1.4
+    customerid       TEXT,    -- Customerid §1.4
+    is_override_batch INTEGER, -- isOverrideBatch §1.4
+    is_integ         INTEGER, -- is_integ §1.4
     rejected_amt     REAL,
     comment          TEXT,
     created_at       TEXT DEFAULT (datetime('now')),
+    updated_at       TEXT DEFAULT (datetime('now')),
     PRIMARY KEY (integ_batch_code, inv_no)
+);
+
+-- §1.4 edi/batch/invoice/tracking — persists tracking body rows
+CREATE TABLE IF NOT EXISTS batch_invoice_tracking (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    country_code         TEXT,    -- query: country_code
+    integ_app_code       TEXT,    -- query: integ_app_code
+    integ_invoice_status INTEGER, -- body: integ_invoice_status
+    payer_invoice_status TEXT,    -- body: payer_invoice_status
+    integ_prov_code      TEXT,    -- body: integ_prov_code
+    invoice_number       TEXT,    -- body: invoice_number
+    created_at           TEXT DEFAULT (datetime('now'))
+);
+
+-- §1.4 edi/batch/pay — persists each payment entry in integBatchPayment[]
+CREATE TABLE IF NOT EXISTS batch_payments (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    integ_batch_code        TEXT NOT NULL,
+    close_batch             INTEGER,
+    integ_payment_date      TEXT,
+    payment_mode            TEXT,
+    payment_reference       TEXT,
+    amount                  REAL,
+    integ_bank_code         TEXT,
+    integ_bank_name         TEXT,
+    integ_bank_account_code TEXT,
+    integ_prov_code         TEXT,
+    country                 TEXT,   -- from query: country_code
+    integ_app_code          TEXT,   -- from query: integ_app_code
+    created_at              TEXT DEFAULT (datetime('now'))
+);
+
+-- §2.21 preauth/item/markback — persists per-item adjudication decisions
+CREATE TABLE IF NOT EXISTS preauth_item_markbacks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    preauth_id   INTEGER NOT NULL,  -- body: id
+    valid_to     TEXT,              -- body: Valid_to
+    customerid   TEXT,              -- query: customerid
+    country      TEXT,              -- query: countrycode
+    created_at   TEXT DEFAULT (datetime('now'))
+);
+
+-- §2.21 preauth/item/markback items[] array rows
+CREATE TABLE IF NOT EXISTS preauth_item_markback_items (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    markback_id     INTEGER NOT NULL,  -- FK → preauth_item_markbacks.id
+    item_id         INTEGER,           -- items[].id (referenceNumber)
+    status          INTEGER,           -- items[].status: 1=approved,2=declined,3=partial
+    approved_amt    TEXT,              -- items[].Approved_amt
+    payer_comment   TEXT,              -- items[].Payer_comment
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+
+-- §preauth/markback — persist pick_comment (was missing)
+-- The seeded_preauths table is updated in-place — this table records the ack audit trail
+CREATE TABLE IF NOT EXISTS preauth_markbacks (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    preauth_id   INTEGER NOT NULL,   -- body: id
+    pick_status  INTEGER,            -- body: Pick_status
+    pick_comment TEXT,               -- body: Pick_comment
+    customerid   TEXT,               -- query: customerid
+    country      TEXT,               -- query: countrycode
+    created_at   TEXT DEFAULT (datetime('now'))
+);
+
+-- §2.2 claims/edi/status — persist statusMsg (was missing)
+CREATE TABLE IF NOT EXISTS claim_status_acks (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id   TEXT NOT NULL,
+    status     INTEGER,
+    status_msg TEXT,   -- statusMsg
+    customerid TEXT,   -- customerid
+    country    TEXT,   -- countrycode
+    created_at TEXT DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS money_movements (

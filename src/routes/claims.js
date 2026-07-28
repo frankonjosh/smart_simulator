@@ -4,11 +4,14 @@ import { info } from '../util/log.js';
 import { pickCountry } from '../util/params.js';
 
 export function registerClaims(app) {
-    // POST /claims/edi — return ready seeded claims for the country.
+    // §2.1  POST /claims/edi — return ready seeded claims for the country.
+    // Query params: country (or countrycode), customerid, isUpdate, limit.
+    // Response shape matches guide §2.1 example exactly (not smartOK envelope).
     app.post('/claims/edi', async (req, reply) => {
-        const limit = parseInt(req.query.limit || '100', 10);
-        const isUpdate = req.query.isUpdate === 'true';
-        const country = pickCountry(req.query) || 'KE';
+        const q = req.query;
+        const limit    = parseInt(q.limit || '100', 10);
+        const isUpdate = q.isUpdate === 'true';
+        const country  = pickCountry(q) || 'KE';
 
         const rows = db.prepare(`
             SELECT claim_id, payload FROM seeded_claims
@@ -23,24 +26,47 @@ export function registerClaims(app) {
         }
 
         const claims = rows.map((r) => JSON.parse(r.payload));
-        info('claims fetched', { count: claims.length, isUpdate });
+        info('claims fetched', { count: claims.length, isUpdate, customerid: q.customerid });
+
+        // Guide §2.1 response envelope — NOT smartOK.
         return reply.send({
+            status_msg: null,
             successful: true,
-            claim_count: claims.length,
-            has_more: false,
             fetch_id_from: rows[0]?.claim_id ?? 0,
-            fetch_id_to: rows[rows.length - 1]?.claim_id ?? 0,
+            fetch_id_to:   rows[rows.length - 1]?.claim_id ?? 0,
+            claim_count:   claims.length,
+            has_more:      false,
             claims,
         });
     });
 
-    // POST /claims/edi/status — Curis ack after materialisation.
+    // §2.2  POST /claims/edi/status — Curis ack after materialisation.
+    // Query params: customerid, countrycode, statusMsg, status, claimId.
+    // status: 0=not picked, 1=picked successfully, 2=failed.
     app.post('/claims/edi/status', async (req, reply) => {
-        const { claimId, status } = req.query;
+        const q = req.query;
+        const country  = pickCountry(q) || 'KE';
+        const { claimId, status, statusMsg, customerid } = q;
+
         const newStatus = status === '1' ? 'picked' : (status === '2' ? 'failed' : 'ready');
+
+        // Update the seeded_claims lifecycle.
         db.prepare(`UPDATE seeded_claims SET status=?, picked_at=datetime('now') WHERE claim_id=?`)
           .run(newStatus, parseInt(claimId, 10));
-        info('claim markback', { claimId, newStatus });
-        return reply.send(smartOK(claimId));
+
+        // Persist the ack audit record including statusMsg.
+        const result = db.prepare(`
+            INSERT INTO claim_status_acks (claim_id, status, status_msg, customerid, country)
+            VALUES (?, ?, ?, ?, ?)
+        `).run(
+            claimId || null,
+            status != null ? parseInt(status, 10) : null,
+            statusMsg || null,
+            customerid || null,
+            country,
+        );
+
+        info('claim markback', { claimId, newStatus, statusMsg });
+        return reply.send(smartOK(claimId, result.changes));
     });
 }
