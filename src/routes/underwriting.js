@@ -271,8 +271,11 @@ export function registerUnderwriting(app) {
         return reply.send(smartOK(q.clnPolCode, result.changes));
     });
 
-    // §2.9  POST /schemes/activation — Scheme Activation Request
-    app.post('/schemes/activation', async (req, reply) => {
+    // §2.9  POST /schemes/activation(s) — Scheme Activation Request.
+    // Guide header says /schemes/activation (singular), example URL says
+    // /schemes/activations (plural). Real SMART's actual served path is
+    // unclear from the guide, so mount both.
+    const schemeActivation = async (req, reply) => {
         const q = req.query;
         const country = pickCountry(q);
         const result = db.prepare(`
@@ -282,10 +285,14 @@ export function registerUnderwriting(app) {
             WHERE cln_pol_code=?
         `).run(q.statusReason || null, q.userId || null, q.customerid || null, country, q.clnPolCode);
         return reply.send(smartOK(q.clnPolCode, result.changes));
-    });
+    };
+    app.post('/schemes/activation', schemeActivation);
+    app.post('/schemes/activations', schemeActivation);
 
-    // §2.10  POST /scheme/deactivations — Scheme De-activation Request
-    app.post('/scheme/deactivations', async (req, reply) => {
+    // §2.10  POST /scheme(s)/deactivations — Scheme De-activation Request.
+    // Guide header says /scheme/deactivations (singular scheme), example URL
+    // says /schemes/deactivations (plural). Mount both.
+    const schemeDeactivation = async (req, reply) => {
         const q = req.query;
         const country = pickCountry(q);
         const result = db.prepare(`
@@ -295,7 +302,9 @@ export function registerUnderwriting(app) {
             WHERE cln_pol_code=?
         `).run(q.statusReason || null, q.userId || null, q.customerid || null, country, q.clnPolCode);
         return reply.send(smartOK(q.clnPolCode, result.changes));
-    });
+    };
+    app.post('/scheme/deactivations', schemeDeactivation);
+    app.post('/schemes/deactivations', schemeDeactivation);
 
     // §2.11  POST /benefit/activation — Benefit Activation Request
     app.post('/benefit/activation', async (req, reply) => {
@@ -321,8 +330,10 @@ export function registerUnderwriting(app) {
         return reply.send(smartOK(q.clnBenCode, result.changes));
     });
 
-    // §2.13  POST /member/renewals — Member Renewal Request
-    app.post('/member/renewals', async (req, reply) => {
+    // §2.13  POST /member(s)/renewals — Member Renewal Request.
+    // Guide header says /member/renewals (singular), example URL says
+    // /members/renewals (plural). Mount both.
+    const memberRenewal = async (req, reply) => {
         const q = req.query;
         const country = pickCountry(q);
         const result = db.prepare(`
@@ -336,7 +347,9 @@ export function registerUnderwriting(app) {
             country, q.memberNumber,
         );
         return reply.send(smartOK(q.memberNumber, result.changes));
-    });
+    };
+    app.post('/member/renewals', memberRenewal);
+    app.post('/members/renewals', memberRenewal);
 
     // §2.14  POST /members/categorychange — Member Category Change
     app.post('/members/categorychange', async (req, reply) => {
