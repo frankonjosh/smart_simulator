@@ -1,5 +1,10 @@
-// Fastify server. Registers all routes, mounts OAuth (open) and every
-// resource endpoint behind requireToken, plus /sim helpers open.
+// Fastify server. Mirrors real SMART's URL shape exactly:
+//   Auth:  POST /api/v2/{customerid}/v1/auth/integ-clients/oauth/token
+//   Data:  POST /api/v2/{customerid}/schemes ... /members ... etc.
+//   Poll:  POST /api/v2/{customerid}/claims/edi ... GET /preauth/fetch
+// Real SMART wraps every request under /api/v2/{customerid}. The sim
+// does the same so a Postman collection or Curis smart-client that
+// works against prod also works here — you only change the host.
 import Fastify from 'fastify';
 import { db } from './store/db.js';
 import { issueToken, requireToken } from './auth/token.js';
@@ -29,20 +34,24 @@ app.addHook('onResponse', async (req, reply) => {
     } catch (_) {}
 });
 
-// Health — open.
+// ── Non-SMART surfaces (open, unprefixed) ────────────────────────────────
+// Health, dev-only /sim/* helpers, and the mock Entra flow are outside
+// the SMART URL shape by design — they aren't part of what we're
+// simulating.
 app.get('/health', async (_req, reply) => reply.send({ status: 'ok', service: 'curis-smart-simulator' }));
-
-// OAuth — open.
-app.post('/oauth/token', issueToken);
-app.post('/auth/oauth/token', issueToken);
-
-// Sim helpers — open (dev only).
 registerSimHelpers(app);
-
-// Mock Entra ID (open — it IS the token issuer, so requireToken doesn't apply).
 registerEntra(app);
 
-// All resource endpoints require a valid bearer token.
+// ── SMART API V2 shape: /api/v2/:customerid/... ──────────────────────────
+// Everything the SMART Postman collection + real-SMART clients send
+// lives under this prefix. Two mounts: one for the auth token endpoint
+// (no bearer required — it issues the bearer), one for the token-gated
+// resource endpoints.
+app.register(async (scoped) => {
+    // POST /api/v2/:customerid/v1/auth/integ-clients/oauth/token
+    scoped.post('/v1/auth/integ-clients/oauth/token', issueToken);
+}, { prefix: '/api/v2/:customerid' });
+
 app.register(async (scoped) => {
     scoped.addHook('preHandler', requireToken);
     registerUnderwriting(scoped);
@@ -50,7 +59,7 @@ app.register(async (scoped) => {
     registerRemittance(scoped);
     registerClaims(scoped);
     registerPreauth(scoped);
-});
+}, { prefix: '/api/v2/:customerid' });
 
 app.listen({ host: '0.0.0.0', port: PORT }).then(() => {
     info('sim listening', { port: PORT });
