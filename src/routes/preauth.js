@@ -28,7 +28,8 @@ export function registerPreauth(app) {
 
         const preauths = rows.map((r) => JSON.parse(r.payload));
         info('preauth fetched', { count: preauths.length, customerid: q.customerid, page: q.page, status });
-        return reply.send({ preauths });
+        // Guide §2.21: "This response is a list of this json data." — bare array.
+        return reply.send(preauths);
     });
 
     // §2.21.5  POST /preauth/item/markback — per-item adjudication feedback.
