@@ -1,5 +1,5 @@
 import { db } from '../store/db.js';
-import { smartOK, smartError } from '../util/response.js';
+import { smartOK, smartError, benefitRuleOK } from '../util/response.js';
 import { info } from '../util/log.js';
 import { pickCountry } from '../util/params.js';
 
@@ -175,8 +175,8 @@ export function registerUnderwriting(app) {
             b.isFrequency ?? null, b.frequencyLimit ?? null,
             q.customerid || null, country,
         );
-        const benCode = b.integ_ben_code || null;
-        return reply.send(smartOK(String(result.lastInsertRowid), result.changes));
+        const msg = `Benefit rule for the benefit(${b.integ_ben_code}) ,category (${b.integ_cat_code}), scheme (${b.integ_scheme_code}) is queued successfully.`;
+        return reply.send(benefitRuleOK(result.lastInsertRowid, msg));
     });
 
     // §2.5  POST /members — Member Card Request
