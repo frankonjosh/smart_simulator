@@ -1,7 +1,7 @@
 import { db } from '../store/db.js';
 import { smartOK } from '../util/response.js';
 import { info } from '../util/log.js';
-import { pickCountry } from '../util/params.js';
+import { pickCountry, pickCustomerId } from '../util/params.js';
 
 export function registerClaims(app) {
     // §2.1  POST /claims/edi — return ready seeded claims for the country.
@@ -26,7 +26,7 @@ export function registerClaims(app) {
         }
 
         const claims = rows.map((r) => JSON.parse(r.payload));
-        info('claims fetched', { count: claims.length, isUpdate, customerid: q.customerid });
+        info('claims fetched', { count: claims.length, isUpdate, customerid: pickCustomerId(req) });
 
         // Guide §2.1 response envelope — NOT smartOK.
         return reply.send({
@@ -46,7 +46,7 @@ export function registerClaims(app) {
     app.post('/claims/edi/status', async (req, reply) => {
         const q = req.query;
         const country  = pickCountry(q) || 'KE';
-        const { claimId, status, statusMsg, customerid } = q;
+        const { claimId, status, statusMsg } = q;
 
         const newStatus = status === '1' ? 'picked' : (status === '2' ? 'failed' : 'ready');
 
@@ -62,7 +62,7 @@ export function registerClaims(app) {
             claimId || null,
             status != null ? parseInt(status, 10) : null,
             statusMsg || null,
-            customerid || null,
+            pickCustomerId(req),
             country,
         );
 

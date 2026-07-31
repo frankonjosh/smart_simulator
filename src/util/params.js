@@ -5,3 +5,11 @@
 export function pickCountry(q) {
     return q?.country || q?.countryCode || q?.countrycode || q?.country_code || null;
 }
+
+// Real SMART carries the tenant in the URL path (/api/v2/{customerid}/...);
+// some guide examples ALSO pass ?customerid=. Prefer the path param —
+// that's what real SMART keys on — and fall back to the query spelling
+// (either case) so hand-crafted Postman calls still tag their rows.
+export function pickCustomerId(req) {
+    return req?.params?.customerid || req?.query?.customerid || req?.query?.Customerid || null;
+}

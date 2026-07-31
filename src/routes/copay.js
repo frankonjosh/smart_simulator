@@ -1,6 +1,6 @@
 import { db } from '../store/db.js';
 import { smartOK } from '../util/response.js';
-import { pickCountry } from '../util/params.js';
+import { pickCountry, pickCustomerId } from '../util/params.js';
 
 export function registerCopay(app) {
     // §1.3  POST /copay/setup — configures member copay rules.
@@ -33,7 +33,7 @@ export function registerCopay(app) {
             b.integ_service_code || null,
             b.copay_type != null ? parseInt(b.copay_type, 10) : null,
             b.amount != null ? parseFloat(b.amount) : null,
-            q.customerid || null,
+            pickCustomerId(req),
             country,
         );
         return reply.send(smartOK(b.integ_scheme_code || 'XXXXXX', result.changes));

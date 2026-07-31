@@ -1,6 +1,6 @@
 import { db } from '../store/db.js';
 import { smartOK } from '../util/response.js';
-import { pickCountry } from '../util/params.js';
+import { pickCountry, pickCustomerId } from '../util/params.js';
 
 export function registerRemittance(app) {
     // §1.4  POST /edi/open/batch
@@ -57,7 +57,7 @@ export function registerRemittance(app) {
             q.integ_batch_code,
             q.invNo,
             q.integProvCode || null,
-            q.Customerid || q.customerid || null,
+            pickCustomerId(req),
             q.isOverrideBatch != null ? (q.isOverrideBatch === 'true' ? 1 : 0) : null,
             q.is_integ != null ? parseInt(q.is_integ, 10) : null,
             parseFloat(q.rejectedAmt || '0'),

@@ -1,7 +1,7 @@
 import { db } from '../store/db.js';
 import { smartOK, smartError, benefitRuleOK } from '../util/response.js';
 import { info } from '../util/log.js';
-import { pickCountry } from '../util/params.js';
+import { pickCountry, pickCustomerId } from '../util/params.js';
 
 export function registerUnderwriting(app) {
     // §2.1  POST /schemes  — REFERENCE PATTERN (do not modify)
@@ -28,7 +28,7 @@ export function registerUnderwriting(app) {
             parseInt(q.polTypeId || '1', 10), q.policyCurrencyId, country,
             q.userId || null,
             q.anniv != null ? parseInt(q.anniv, 10) : null,
-            q.customerid || null,
+            pickCustomerId(req),
         );
         info('scheme defined', { clnPolCode: q.clnPolCode, userId: q.userId, anniv: q.anniv });
         return reply.send(smartOK(q.clnPolCode, result.changes));
@@ -47,7 +47,7 @@ export function registerUnderwriting(app) {
                 customerid=excluded.customerid,
                 country=excluded.country,
                 updated_at=datetime('now')
-        `).run(q.clnPolCode, q.clnCatCode, q.catDesc, q.userId || null, q.customerid || null, country);
+        `).run(q.clnPolCode, q.clnCatCode, q.catDesc, q.userId || null, pickCustomerId(req), country);
         return reply.send(smartOK(q.clnCatCode, result.changes));
     });
 
@@ -85,7 +85,7 @@ export function registerUnderwriting(app) {
             q.userId || null,
             q.benLinked2Tqcode || null,
             q.benTypDesc || null,
-            q.customerid || null,
+            pickCustomerId(req),
             country,
         );
         return reply.send(smartOK(q.clnBenCode, result.changes));
@@ -125,7 +125,7 @@ export function registerUnderwriting(app) {
             q.userId || null,
             q.benLinked2Tqcode || null,
             q.benTypDesc || null,
-            q.customerid || null,
+            pickCustomerId(req),
             country,
         );
         return reply.send(smartOK(q.clnBenCode, result.changes));
@@ -173,7 +173,7 @@ export function registerUnderwriting(app) {
             b.isBuffer ?? null, b.bufferType ?? null, b.bufferLimit ?? null, b.bufferAction ?? null,
             b.isProrated ?? null, b.prorationType ?? null,
             b.isFrequency ?? null, b.frequencyLimit ?? null,
-            q.customerid || null, country,
+            pickCustomerId(req), country,
         );
         const msg = `Benefit rule for the benefit(${b.integ_ben_code}) ,category (${b.integ_cat_code}), scheme (${b.integ_scheme_code}) is queued successfully.`;
         return reply.send(benefitRuleOK(result.lastInsertRowid, msg));
@@ -222,7 +222,7 @@ export function registerUnderwriting(app) {
             q.schemeStartDate || null, q.schemeEndDate || null,
             q.userID || q.userId || null,
             q.roamingCountries || null,
-            q.customerid || null,
+            pickCustomerId(req),
             q.dob, q.gender, q.phone_number || null, q.email_address || null, country,
         );
         info('member enrolled', { membershipNumber: q.membershipNumber });
@@ -238,7 +238,7 @@ export function registerUnderwriting(app) {
             VALUES (?, ?, ?, ?, ?, ?)
         `).run(
             q.memberNumber, q.staffNumber || null, q.userId || null,
-            q.customerid || null, q.reorderReason || null, country,
+            pickCustomerId(req), q.reorderReason || null, country,
         );
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
@@ -267,7 +267,7 @@ export function registerUnderwriting(app) {
                 start_date=?, end_date=?, user_id=?, customerid=?, country=?,
                 updated_at=datetime('now')
             WHERE cln_pol_code=?
-        `).run(q.startDate, q.endDate, q.userId || null, q.customerid || null, country, q.clnPolCode);
+        `).run(q.startDate, q.endDate, q.userId || null, pickCustomerId(req), country, q.clnPolCode);
         return reply.send(smartOK(q.clnPolCode, result.changes));
     });
 
@@ -283,7 +283,7 @@ export function registerUnderwriting(app) {
                 status='active', status_reason=?, user_id=?, customerid=?, country=?,
                 updated_at=datetime('now')
             WHERE cln_pol_code=?
-        `).run(q.statusReason || null, q.userId || null, q.customerid || null, country, q.clnPolCode);
+        `).run(q.statusReason || null, q.userId || null, pickCustomerId(req), country, q.clnPolCode);
         return reply.send(smartOK(q.clnPolCode, result.changes));
     };
     app.post('/schemes/activation', schemeActivation);
@@ -300,7 +300,7 @@ export function registerUnderwriting(app) {
                 status='inactive', status_reason=?, user_id=?, customerid=?, country=?,
                 updated_at=datetime('now')
             WHERE cln_pol_code=?
-        `).run(q.statusReason || null, q.userId || null, q.customerid || null, country, q.clnPolCode);
+        `).run(q.statusReason || null, q.userId || null, pickCustomerId(req), country, q.clnPolCode);
         return reply.send(smartOK(q.clnPolCode, result.changes));
     };
     app.post('/scheme/deactivations', schemeDeactivation);
@@ -343,7 +343,7 @@ export function registerUnderwriting(app) {
             WHERE membership_number=?
         `).run(
             q.startDate || null, q.endDate || null,
-            q.userId || null, q.customerid || null,
+            q.userId || null, pickCustomerId(req),
             country, q.memberNumber,
         );
         return reply.send(smartOK(q.memberNumber, result.changes));
@@ -355,12 +355,17 @@ export function registerUnderwriting(app) {
     app.post('/members/categorychange', async (req, reply) => {
         const q = req.query;
         const country = pickCountry(q);
+        // clnPolCode scopes the update: the guide requires it, and the only
+        // sensible reason is asserting which scheme the member belongs to.
+        // A mismatch yields updated_rows:0 (SMART's silent-miss style).
+        // ASSUMPTION — real SMART's exact validation unconfirmed; on the
+        // ask-SMART list.
         const result = db.prepare(`
             UPDATE members SET
                 cln_cat_code=?, user_id=?, customerid=?, country=?,
                 updated_at=datetime('now')
-            WHERE membership_number=?
-        `).run(q.newGrade, q.userId || null, q.customerid || null, country, q.memberNumber);
+            WHERE membership_number=? AND cln_pol_code=?
+        `).run(q.newGrade, q.userId || null, pickCustomerId(req), country, q.memberNumber, q.clnPolCode);
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
 
@@ -373,7 +378,7 @@ export function registerUnderwriting(app) {
                 status='active', status_reason=?, user_id=?, customerid=?,
                 country=?, updated_at=datetime('now')
             WHERE membership_number=?
-        `).run(q.statusReason || null, q.userId || null, q.customerid || null, country, q.memberNumber);
+        `).run(q.statusReason || null, q.userId || null, pickCustomerId(req), country, q.memberNumber);
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
 
@@ -386,7 +391,7 @@ export function registerUnderwriting(app) {
                 status='active', status_reason=?, user_id=?, customerid=?,
                 country=?, updated_at=datetime('now')
             WHERE membership_number=?
-        `).run(q.statusReason || null, q.userId || null, q.customerid || null, country, q.memberNumber);
+        `).run(q.statusReason || null, q.userId || null, pickCustomerId(req), country, q.memberNumber);
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
 
@@ -399,7 +404,7 @@ export function registerUnderwriting(app) {
                 status='inactive', status_reason=?, user_id=?, customerid=?,
                 country=?, updated_at=datetime('now')
             WHERE membership_number=?
-        `).run(q.statusReason || null, q.userId || null, q.customerid || null, country, q.memberNumber);
+        `).run(q.statusReason || null, q.userId || null, pickCustomerId(req), country, q.memberNumber);
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
 
@@ -412,7 +417,7 @@ export function registerUnderwriting(app) {
             VALUES (?, ?, ?, ?, ?)
         `).run(
             q.memberNumber, q.userId || null,
-            q.customerid || null, q.change_reason || null, country,
+            pickCustomerId(req), q.change_reason || null, country,
         );
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
@@ -435,7 +440,7 @@ export function registerUnderwriting(app) {
             q.surname, q.secondName, q.thirdName || null, q.otherName || null,
             q.idNumber || null, q.nhifNumber || null, q.staffNumber || null,
             q.dob, q.gender, q.phone_number || null, q.email_address || null,
-            q.userId || null, q.customerid || null, country,
+            q.userId || null, pickCustomerId(req), country,
             q.membershipNumber,
         );
         return reply.send(smartOK(q.membershipNumber, result.changes));
@@ -459,7 +464,7 @@ export function registerUnderwriting(app) {
             q.dateEntered || null, q.providerCode || null,
             q.invoiceNumber || null, q.userId || null,
             q.clnPolCode || null, q.invoiceDate || null,
-            q.invoiceId || null, q.customerid || null,
+            q.invoiceId || null, pickCustomerId(req),
             q.anniv != null ? parseInt(q.anniv, 10) : null,
             country,
         );
@@ -484,7 +489,7 @@ export function registerUnderwriting(app) {
             q.dateEntered || null, q.providerCode || null,
             q.invoiceNumber || null, q.userId || null,
             q.clnPolCode || null, q.invoiceDate || null,
-            q.invoiceId || null, q.customerid || null,
+            q.invoiceId || null, pickCustomerId(req),
             q.anniv != null ? parseInt(q.anniv, 10) : null,
             country,
         );

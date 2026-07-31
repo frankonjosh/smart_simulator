@@ -1,7 +1,7 @@
 import { db } from '../store/db.js';
 import { smartOK } from '../util/response.js';
 import { info } from '../util/log.js';
-import { pickCountry } from '../util/params.js';
+import { pickCountry, pickCustomerId } from '../util/params.js';
 
 export function registerPreauth(app) {
     // §2.21  GET /preauth/fetch — poll pre-auth requests from SMART.
@@ -27,7 +27,7 @@ export function registerPreauth(app) {
         `).all(country, limit);
 
         const preauths = rows.map((r) => JSON.parse(r.payload));
-        info('preauth fetched', { count: preauths.length, customerid: q.customerid, page: q.page, status });
+        info('preauth fetched', { count: preauths.length, customerid: pickCustomerId(req), page: q.page, status });
         // Guide §2.21: "This response is a list of this json data." — bare array.
         return reply.send(preauths);
     });
@@ -41,13 +41,16 @@ export function registerPreauth(app) {
         const country = pickCountry(q) || 'KE';
 
         // Insert the parent markback record.
+        // Guide §2.21.5 table says Valid_to / Approved_amt / Payer_comment
+        // (capitalized); SMART's own Postman example uses lowercase. Real
+        // SMART's casing is unconfirmed (ask-SMART list) — accept both.
         const parent = db.prepare(`
             INSERT INTO preauth_item_markbacks (preauth_id, valid_to, customerid, country)
             VALUES (?, ?, ?, ?)
         `).run(
             b.id != null ? parseInt(b.id, 10) : null,
-            b.Valid_to || null,
-            q.customerid || null,
+            b.Valid_to || b.valid_to || null,
+            pickCustomerId(req),
             country,
         );
         const markbackId = parent.lastInsertRowid;
@@ -59,12 +62,13 @@ export function registerPreauth(app) {
         `);
         const items = Array.isArray(b.items) ? b.items : [];
         for (const it of items) {
+            const approvedAmt = it.Approved_amt ?? it.approved_amt;
             itemStmt.run(
                 markbackId,
                 it.id != null ? parseInt(it.id, 10) : null,
                 it.status != null ? parseInt(it.status, 10) : null,
-                it.Approved_amt != null ? String(it.Approved_amt) : null,
-                it.Payer_comment || null,
+                approvedAmt != null ? String(approvedAmt) : null,
+                it.Payer_comment || it.payer_comment || null,
             );
         }
 
@@ -95,7 +99,7 @@ export function registerPreauth(app) {
             id != null ? parseInt(id, 10) : null,
             pick_status != null ? parseInt(pick_status, 10) : null,
             pick_comment || null,
-            q.customerid || null,
+            pickCustomerId(req),
             country,
         );
 
