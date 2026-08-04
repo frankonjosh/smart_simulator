@@ -41,9 +41,19 @@ export function registerSimHelpers(app) {
     });
 
     // POST /sim/reset — nuke every table (idempotent, dev-only).
+    // Keep in sync with schema.sql: every CREATE TABLE belongs here,
+    // child tables before their parents.
     app.post('/sim/reset', async (_req, reply) => {
-        const tables = ['tokens', 'events', 'seeded_preauths', 'seeded_claims', 'money_movements',
-                        'batch_invoices', 'batches', 'copays', 'members', 'benefits', 'categories', 'schemes'];
+        const tables = [
+            'tokens', 'events',
+            'seeded_preauths', 'seeded_claims',
+            'preauth_item_markback_items', 'preauth_item_markbacks', 'preauth_markbacks',
+            'claim_status_acks', 'money_movements',
+            'batch_invoice_tracking', 'batch_payments', 'batch_invoices', 'batches',
+            'copays', 'benefit_rules',
+            'card_reprints', 'fingerprint_removals',
+            'members', 'benefits', 'categories', 'schemes',
+        ];
         for (const t of tables) db.prepare(`DELETE FROM ${t}`).run();
         return reply.send({ reset: true });
     });
