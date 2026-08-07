@@ -29,8 +29,13 @@ export function registerCopay(app) {
             b.integ_scheme_code || null,
             b.integ_cat_code || null,
             b.integ_ben_code || null,
-            b.integ_prov_code || null,
-            b.integ_service_code || null,
+            // Blank provider/service = "applies to all". Store as '' not
+            // NULL so the ON CONFLICT unique key actually matches on
+            // re-send — SQLite treats NULLs as distinct, which would
+            // append instead of upsert. Real SMART keys on the tuple with
+            // blank as a value.
+            b.integ_prov_code || '',
+            b.integ_service_code || '',
             b.copay_type != null ? parseInt(b.copay_type, 10) : null,
             b.amount != null ? parseFloat(b.amount) : null,
             pickCustomerId(req),
