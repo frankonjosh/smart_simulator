@@ -15,16 +15,19 @@ export function registerPreauth(app) {
         const limit  = parseInt(q.limit || '100', 10);
         const status = q.status != null ? String(q.status) : null;   // 0/1/2/3/4
         const country = pickCountry(q) || 'KE';
+        const cust    = pickCustomerId(req) || '';
 
         // Filter by status if provided (0=pending,1=approved,2=declined,3=partial,4=all except pending).
         // Seeded_preauths.status tracks pick lifecycle (ready/picked/failed), not approval status —
         // return 'ready' rows unless status=4 (return all except pending, i.e. all picked).
+        // Tenant isolation: a preauth seeded for CUST-A is only served to
+        // CUST-A. Empty customerid = tenant-agnostic (pre-isolation seeds).
         const rows = db.prepare(`
             SELECT preauth_id, payload FROM seeded_preauths
-            WHERE status = 'ready' AND country = ?
+            WHERE status = 'ready' AND country = ? AND (customerid = ? OR customerid = '')
             ORDER BY preauth_id ASC
             LIMIT ?
-        `).all(country, limit);
+        `).all(country, cust, limit);
 
         const preauths = rows.map((r) => JSON.parse(r.payload));
         info('preauth fetched', { count: preauths.length, customerid: pickCustomerId(req), page: q.page, status });

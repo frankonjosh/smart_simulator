@@ -9,16 +9,16 @@ export function registerRemittance(app) {
         const q = req.query;
         const country = pickCountry(q);
         const result = db.prepare(`
-            INSERT INTO batches (integ_batch_code, integ_prov_code, integ_app_code, integ_user_name, status, country)
-            VALUES (?, ?, ?, ?, 'open', ?)
-            ON CONFLICT(integ_batch_code) DO UPDATE SET
+            INSERT INTO batches (integ_batch_code, integ_prov_code, integ_app_code, integ_user_name, status, customerid, country)
+            VALUES (?, ?, ?, ?, 'open', ?, ?)
+            ON CONFLICT(customerid, integ_batch_code) DO UPDATE SET
                 integ_prov_code=excluded.integ_prov_code,
                 integ_app_code=excluded.integ_app_code,
                 integ_user_name=excluded.integ_user_name,
                 status='open',
                 country=excluded.country,
                 updated_at=datetime('now')
-        `).run(q.integ_batch_code, q.integ_prov_code, q.integ_app_code, q.integ_user_name || null, country);
+        `).run(q.integ_batch_code, q.integ_prov_code, q.integ_app_code, q.integ_user_name || null, pickCustomerId(req) || '', country);
         return reply.send(smartOK(q.integ_batch_code, result.changes));
     });
 
@@ -28,8 +28,8 @@ export function registerRemittance(app) {
         const q = req.query;
         const result = db.prepare(`
             UPDATE batches SET status='closed', updated_at=datetime('now')
-            WHERE integ_batch_code=?
-        `).run(q.integ_batch_code);
+            WHERE integ_batch_code=? AND customerid=?
+        `).run(q.integ_batch_code, pickCustomerId(req) || '');
         return reply.send(smartOK(q.integ_batch_code, result.changes));
     });
 
@@ -45,7 +45,7 @@ export function registerRemittance(app) {
                 is_override_batch, is_integ, rejected_amt, comment
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(integ_batch_code, inv_no) DO UPDATE SET
+            ON CONFLICT(customerid, integ_batch_code, inv_no) DO UPDATE SET
                 integ_prov_code=excluded.integ_prov_code,
                 customerid=excluded.customerid,
                 is_override_batch=excluded.is_override_batch,
@@ -57,7 +57,7 @@ export function registerRemittance(app) {
             q.integ_batch_code,
             q.invNo,
             q.integProvCode || null,
-            pickCustomerId(req),
+            pickCustomerId(req) || '',
             q.isOverrideBatch != null ? (q.isOverrideBatch === 'true' ? 1 : 0) : null,
             q.is_integ != null ? parseInt(q.is_integ, 10) : null,
             parseFloat(q.rejectedAmt || '0'),
@@ -73,8 +73,8 @@ export function registerRemittance(app) {
     app.get('/edi/batch/invoice/add', async (req, reply) => {
         const q = req.query;
         const row = db.prepare(`
-            SELECT * FROM batch_invoices WHERE inv_no=?
-        `).get(q.invNo || q.Invoice_Number);
+            SELECT * FROM batch_invoices WHERE inv_no=? AND customerid=?
+        `).get(q.invNo || q.Invoice_Number, pickCustomerId(req) || '');
         if (!row) {
             return reply.send(smartOK(q.invNo || '', 0));
         }
@@ -149,7 +149,7 @@ export function registerRemittance(app) {
             changes += r.changes;
 
             if (p.close_batch) {
-                db.prepare(`UPDATE batches SET status='paid', updated_at=datetime('now') WHERE integ_batch_code=?`).run(p.integ_batch_code);
+                db.prepare(`UPDATE batches SET status='paid', updated_at=datetime('now') WHERE integ_batch_code=? AND customerid=?`).run(p.integ_batch_code, pickCustomerId(req) || '');
             }
         }
         return reply.send(smartOK(q.integ_app_code || 'XXXXXX', changes));

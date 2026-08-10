@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS schemes (
-    cln_pol_code       TEXT PRIMARY KEY,
+    cln_pol_code       TEXT NOT NULL,
     company_name       TEXT NOT NULL,
     start_date         TEXT,
     end_date           TEXT,
@@ -9,12 +9,17 @@ CREATE TABLE IF NOT EXISTS schemes (
     -- Guide-mandated fields that real SMART persists per row.
     user_id            TEXT,     -- userId — who approved sending this to SMART
     anniv              INTEGER,  -- renewal history indicator (0, 1, 2)
-    customerid         TEXT,     -- API-consumer identifier
+    -- API-consumer identifier. Real SMART is multi-tenant (every call is
+    -- under /api/v2/{customerid}/…) so customerid is part of the row
+    -- identity — two customers may legitimately reuse the same business
+    -- code without colliding.
+    customerid         TEXT NOT NULL DEFAULT '',
     -- §2.9 / §2.10 activation / deactivation audit fields
     status_reason      TEXT,
     status             TEXT DEFAULT 'active',
     created_at         TEXT DEFAULT (datetime('now')),
-    updated_at         TEXT DEFAULT (datetime('now'))
+    updated_at         TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (customerid, cln_pol_code)
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -23,11 +28,11 @@ CREATE TABLE IF NOT EXISTS categories (
     cat_desc     TEXT NOT NULL,
     -- §2.2 guide-mandated
     user_id      TEXT,
-    customerid   TEXT,
+    customerid   TEXT NOT NULL DEFAULT '',
     country      TEXT,
     created_at   TEXT DEFAULT (datetime('now')),
     updated_at   TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (cln_pol_code, cln_cat_code)
+    PRIMARY KEY (customerid, cln_pol_code, cln_cat_code)
 );
 
 CREATE TABLE IF NOT EXISTS benefits (
@@ -44,18 +49,18 @@ CREATE TABLE IF NOT EXISTS benefits (
     user_id              TEXT,   -- userId
     ben_linked2tqcode    TEXT,   -- benLinked2Tqcode: parent benefit code or '-'
     ben_typ_desc         TEXT,   -- benTypDesc
-    customerid           TEXT,
+    customerid           TEXT NOT NULL DEFAULT '',
     country              TEXT,
     -- §2.11 / §2.12 activation audit fields
     status_reason        TEXT,
     active               INTEGER DEFAULT 1,
     created_at           TEXT DEFAULT (datetime('now')),
     updated_at           TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (cln_pol_code, cat_code, cln_ben_code)
+    PRIMARY KEY (customerid, cln_pol_code, cat_code, cln_ben_code)
 );
 
 CREATE TABLE IF NOT EXISTS members (
-    membership_number TEXT PRIMARY KEY,
+    membership_number TEXT NOT NULL,
     cln_pol_code      TEXT NOT NULL,
     cln_cat_code      TEXT,
     family_code       TEXT,
@@ -72,7 +77,7 @@ CREATE TABLE IF NOT EXISTS members (
     scheme_end_date   TEXT,   -- schemeEndDate
     roaming_countries TEXT,   -- roamingCountries
     user_id           TEXT,   -- userID
-    customerid        TEXT,
+    customerid        TEXT NOT NULL DEFAULT '',
     dob               TEXT,
     gender            TEXT,
     phone_number      TEXT,
@@ -82,7 +87,8 @@ CREATE TABLE IF NOT EXISTS members (
     status            TEXT DEFAULT 'active',
     country           TEXT,
     created_at        TEXT DEFAULT (datetime('now')),
-    updated_at        TEXT DEFAULT (datetime('now'))
+    updated_at        TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (customerid, membership_number)
 );
 
 CREATE TABLE IF NOT EXISTS card_reprints (
@@ -153,36 +159,38 @@ CREATE TABLE IF NOT EXISTS copays (
     integ_service_code TEXT,
     copay_type         INTEGER,
     amount             REAL,
-    customerid         TEXT,   -- §1.3 query param
+    customerid         TEXT NOT NULL DEFAULT '',   -- §1.3 query param / tenant key
     country            TEXT,
     created_at         TEXT DEFAULT (datetime('now')),
     updated_at         TEXT DEFAULT (datetime('now')),
-    UNIQUE (integ_scheme_code, integ_cat_code, integ_ben_code, integ_prov_code, integ_service_code)
+    UNIQUE (customerid, integ_scheme_code, integ_cat_code, integ_ben_code, integ_prov_code, integ_service_code)
 );
 
 CREATE TABLE IF NOT EXISTS batches (
-    integ_batch_code TEXT PRIMARY KEY,
+    integ_batch_code TEXT NOT NULL,
     integ_prov_code  TEXT,
     integ_app_code   TEXT,
     integ_user_name  TEXT,   -- §1.4 edi/open/batch — who created the batch
     status           TEXT DEFAULT 'open',
+    customerid       TEXT NOT NULL DEFAULT '',   -- tenant key
     country          TEXT,
     created_at       TEXT DEFAULT (datetime('now')),
-    updated_at       TEXT DEFAULT (datetime('now'))
+    updated_at       TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (customerid, integ_batch_code)
 );
 
 CREATE TABLE IF NOT EXISTS batch_invoices (
     integ_batch_code TEXT NOT NULL,
     inv_no           TEXT NOT NULL,
     integ_prov_code  TEXT,    -- integProvCode §1.4
-    customerid       TEXT,    -- Customerid §1.4
+    customerid       TEXT NOT NULL DEFAULT '',    -- Customerid §1.4 / tenant key
     is_override_batch INTEGER, -- isOverrideBatch §1.4
     is_integ         INTEGER, -- is_integ §1.4
     rejected_amt     REAL,
     comment          TEXT,
     created_at       TEXT DEFAULT (datetime('now')),
     updated_at       TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (integ_batch_code, inv_no)
+    PRIMARY KEY (customerid, integ_batch_code, inv_no)
 );
 
 -- §1.4 edi/batch/invoice/tracking — persists tracking body rows
@@ -285,6 +293,7 @@ CREATE TABLE IF NOT EXISTS seeded_claims (
     payload      TEXT NOT NULL,
     status       TEXT DEFAULT 'ready',
     country      TEXT DEFAULT 'KE',
+    customerid   TEXT NOT NULL DEFAULT '',   -- tenant scope for /claims/edi fetch
     picked_at    TEXT
 );
 
@@ -293,6 +302,7 @@ CREATE TABLE IF NOT EXISTS seeded_preauths (
     payload      TEXT NOT NULL,
     status       TEXT DEFAULT 'ready',
     country      TEXT DEFAULT 'KE',
+    customerid   TEXT NOT NULL DEFAULT '',   -- tenant scope for /preauth/fetch
     picked_at    TEXT
 );
 

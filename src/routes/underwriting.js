@@ -12,7 +12,7 @@ export function registerUnderwriting(app) {
         const result = db.prepare(`
             INSERT INTO schemes (cln_pol_code, company_name, start_date, end_date, pol_type_id, policy_currency_id, country, user_id, anniv, customerid)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(cln_pol_code) DO UPDATE SET
+            ON CONFLICT(customerid, cln_pol_code) DO UPDATE SET
                 company_name=excluded.company_name,
                 start_date=excluded.start_date,
                 end_date=excluded.end_date,
@@ -28,7 +28,7 @@ export function registerUnderwriting(app) {
             parseInt(q.polTypeId || '1', 10), q.policyCurrencyId, country,
             q.userId || null,
             q.anniv != null ? parseInt(q.anniv, 10) : null,
-            pickCustomerId(req),
+            pickCustomerId(req) || '',
         );
         info('scheme defined', { clnPolCode: q.clnPolCode, userId: q.userId, anniv: q.anniv });
         return reply.send(smartOK(q.clnPolCode, result.changes));
@@ -41,13 +41,13 @@ export function registerUnderwriting(app) {
         const result = db.prepare(`
             INSERT INTO categories (cln_pol_code, cln_cat_code, cat_desc, user_id, customerid, country)
             VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(cln_pol_code, cln_cat_code) DO UPDATE SET
+            ON CONFLICT(customerid, cln_pol_code, cln_cat_code) DO UPDATE SET
                 cat_desc=excluded.cat_desc,
                 user_id=excluded.user_id,
                 customerid=excluded.customerid,
                 country=excluded.country,
                 updated_at=datetime('now')
-        `).run(q.clnPolCode, q.clnCatCode, q.catDesc, q.userId || null, pickCustomerId(req), country);
+        `).run(q.clnPolCode, q.clnCatCode, q.catDesc, q.userId || null, pickCustomerId(req) || '', country);
         return reply.send(smartOK(q.clnCatCode, result.changes));
     });
 
@@ -62,7 +62,7 @@ export function registerUnderwriting(app) {
                 mem_assigned_benefit, user_id, ben_linked2tqcode, ben_typ_desc,
                 customerid, country
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(cln_pol_code, cat_code, cln_ben_code) DO UPDATE SET
+            ON CONFLICT(customerid, cln_pol_code, cat_code, cln_ben_code) DO UPDATE SET
                 benefit_desc=excluded.benefit_desc,
                 policy_number=excluded.policy_number,
                 ben_type_id=excluded.ben_type_id,
@@ -85,7 +85,7 @@ export function registerUnderwriting(app) {
             q.userId || null,
             q.benLinked2Tqcode || null,
             q.benTypDesc || null,
-            pickCustomerId(req),
+            pickCustomerId(req) || '',
             country,
         );
         return reply.send(smartOK(q.clnBenCode, result.changes));
@@ -102,7 +102,7 @@ export function registerUnderwriting(app) {
                 mem_assigned_benefit, user_id, ben_linked2tqcode, ben_typ_desc,
                 customerid, country
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(cln_pol_code, cat_code, cln_ben_code) DO UPDATE SET
+            ON CONFLICT(customerid, cln_pol_code, cat_code, cln_ben_code) DO UPDATE SET
                 benefit_desc=excluded.benefit_desc,
                 policy_number=excluded.policy_number,
                 ben_type_id=excluded.ben_type_id,
@@ -125,7 +125,7 @@ export function registerUnderwriting(app) {
             q.userId || null,
             q.benLinked2Tqcode || null,
             q.benTypDesc || null,
-            pickCustomerId(req),
+            pickCustomerId(req) || '',
             country,
         );
         return reply.send(smartOK(q.clnBenCode, result.changes));
@@ -192,7 +192,7 @@ export function registerUnderwriting(app) {
                 user_id, roaming_countries, customerid,
                 dob, gender, phone_number, email_address, country
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(membership_number) DO UPDATE SET
+            ON CONFLICT(customerid, membership_number) DO UPDATE SET
                 cln_pol_code=excluded.cln_pol_code,
                 cln_cat_code=excluded.cln_cat_code,
                 family_code=excluded.family_code,
@@ -222,7 +222,7 @@ export function registerUnderwriting(app) {
             q.schemeStartDate || null, q.schemeEndDate || null,
             q.userID || q.userId || null,
             q.roamingCountries || null,
-            pickCustomerId(req),
+            pickCustomerId(req) || '',
             q.dob, q.gender, q.phone_number || null, q.email_address || null, country,
         );
         info('member enrolled', { membershipNumber: q.membershipNumber });
@@ -246,13 +246,14 @@ export function registerUnderwriting(app) {
     // §2.7  POST /scheme/member/migration — JSON body array
     app.post('/scheme/member/migration', async (req, reply) => {
         const items = req.body || [];
+        const cust = pickCustomerId(req) || '';
         let changes = 0;
         for (const it of items) {
             const r = db.prepare(`
                 UPDATE members
                 SET cln_pol_code=?, cln_cat_code=?, updated_at=datetime('now')
-                WHERE membership_number=?
-            `).run(it.integSchemeCode, it.integCategoryCode, it.integMemberNumber);
+                WHERE membership_number=? AND customerid=?
+            `).run(it.integSchemeCode, it.integCategoryCode, it.integMemberNumber, cust);
             changes += r.changes;
         }
         return reply.send(smartOK(String(items.length), changes));
@@ -264,10 +265,10 @@ export function registerUnderwriting(app) {
         const country = pickCountry(q);
         const result = db.prepare(`
             UPDATE schemes SET
-                start_date=?, end_date=?, user_id=?, customerid=?, country=?,
+                start_date=?, end_date=?, user_id=?, country=?,
                 updated_at=datetime('now')
-            WHERE cln_pol_code=?
-        `).run(q.startDate, q.endDate, q.userId || null, pickCustomerId(req), country, q.clnPolCode);
+            WHERE cln_pol_code=? AND customerid=?
+        `).run(q.startDate, q.endDate, q.userId || null, country, q.clnPolCode, pickCustomerId(req) || '');
         return reply.send(smartOK(q.clnPolCode, result.changes));
     });
 
@@ -280,10 +281,10 @@ export function registerUnderwriting(app) {
         const country = pickCountry(q);
         const result = db.prepare(`
             UPDATE schemes SET
-                status='active', status_reason=?, user_id=?, customerid=?, country=?,
+                status='active', status_reason=?, user_id=?, country=?,
                 updated_at=datetime('now')
-            WHERE cln_pol_code=?
-        `).run(q.statusReason || null, q.userId || null, pickCustomerId(req), country, q.clnPolCode);
+            WHERE cln_pol_code=? AND customerid=?
+        `).run(q.statusReason || null, q.userId || null, country, q.clnPolCode, pickCustomerId(req) || '');
         return reply.send(smartOK(q.clnPolCode, result.changes));
     };
     app.post('/schemes/activation', schemeActivation);
@@ -297,10 +298,10 @@ export function registerUnderwriting(app) {
         const country = pickCountry(q);
         const result = db.prepare(`
             UPDATE schemes SET
-                status='inactive', status_reason=?, user_id=?, customerid=?, country=?,
+                status='inactive', status_reason=?, user_id=?, country=?,
                 updated_at=datetime('now')
-            WHERE cln_pol_code=?
-        `).run(q.statusReason || null, q.userId || null, pickCustomerId(req), country, q.clnPolCode);
+            WHERE cln_pol_code=? AND customerid=?
+        `).run(q.statusReason || null, q.userId || null, country, q.clnPolCode, pickCustomerId(req) || '');
         return reply.send(smartOK(q.clnPolCode, result.changes));
     };
     app.post('/scheme/deactivations', schemeDeactivation);
@@ -313,8 +314,8 @@ export function registerUnderwriting(app) {
         const result = db.prepare(`
             UPDATE benefits SET
                 active=1, status_reason=?, updated_at=datetime('now')
-            WHERE cln_pol_code=? AND cat_code=? AND cln_ben_code=?
-        `).run(q.statusReason || null, q.clnPolCode, q.catCode, q.clnBenCode);
+            WHERE cln_pol_code=? AND cat_code=? AND cln_ben_code=? AND customerid=?
+        `).run(q.statusReason || null, q.clnPolCode, q.catCode, q.clnBenCode, pickCustomerId(req) || '');
         return reply.send(smartOK(q.clnBenCode, result.changes));
     });
 
@@ -325,8 +326,8 @@ export function registerUnderwriting(app) {
         const result = db.prepare(`
             UPDATE benefits SET
                 active=0, status_reason=?, updated_at=datetime('now')
-            WHERE cln_pol_code=? AND cat_code=? AND cln_ben_code=?
-        `).run(q.statusReason || null, q.clnPolCode, q.catCode, q.clnBenCode);
+            WHERE cln_pol_code=? AND cat_code=? AND cln_ben_code=? AND customerid=?
+        `).run(q.statusReason || null, q.clnPolCode, q.catCode, q.clnBenCode, pickCustomerId(req) || '');
         return reply.send(smartOK(q.clnBenCode, result.changes));
     });
 
@@ -338,13 +339,13 @@ export function registerUnderwriting(app) {
         const country = pickCountry(q);
         const result = db.prepare(`
             UPDATE members SET
-                scheme_start_date=?, scheme_end_date=?, user_id=?, customerid=?,
+                scheme_start_date=?, scheme_end_date=?, user_id=?,
                 country=?, updated_at=datetime('now')
-            WHERE membership_number=?
+            WHERE membership_number=? AND customerid=?
         `).run(
             q.startDate || null, q.endDate || null,
-            q.userId || null, pickCustomerId(req),
-            country, q.memberNumber,
+            q.userId || null,
+            country, q.memberNumber, pickCustomerId(req) || '',
         );
         return reply.send(smartOK(q.memberNumber, result.changes));
     };
@@ -362,10 +363,10 @@ export function registerUnderwriting(app) {
         // ask-SMART list.
         const result = db.prepare(`
             UPDATE members SET
-                cln_cat_code=?, user_id=?, customerid=?, country=?,
+                cln_cat_code=?, user_id=?, country=?,
                 updated_at=datetime('now')
-            WHERE membership_number=? AND cln_pol_code=?
-        `).run(q.newGrade, q.userId || null, pickCustomerId(req), country, q.memberNumber, q.clnPolCode);
+            WHERE membership_number=? AND cln_pol_code=? AND customerid=?
+        `).run(q.newGrade, q.userId || null, country, q.memberNumber, q.clnPolCode, pickCustomerId(req) || '');
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
 
@@ -375,10 +376,10 @@ export function registerUnderwriting(app) {
         const country = pickCountry(q);
         const result = db.prepare(`
             UPDATE members SET
-                status='active', status_reason=?, user_id=?, customerid=?,
+                status='active', status_reason=?, user_id=?,
                 country=?, updated_at=datetime('now')
-            WHERE membership_number=?
-        `).run(q.statusReason || null, q.userId || null, pickCustomerId(req), country, q.memberNumber);
+            WHERE membership_number=? AND customerid=?
+        `).run(q.statusReason || null, q.userId || null, country, q.memberNumber, pickCustomerId(req) || '');
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
 
@@ -388,10 +389,10 @@ export function registerUnderwriting(app) {
         const country = pickCountry(q);
         const result = db.prepare(`
             UPDATE members SET
-                status='active', status_reason=?, user_id=?, customerid=?,
+                status='active', status_reason=?, user_id=?,
                 country=?, updated_at=datetime('now')
-            WHERE membership_number=?
-        `).run(q.statusReason || null, q.userId || null, pickCustomerId(req), country, q.memberNumber);
+            WHERE membership_number=? AND customerid=?
+        `).run(q.statusReason || null, q.userId || null, country, q.memberNumber, pickCustomerId(req) || '');
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
 
@@ -401,10 +402,10 @@ export function registerUnderwriting(app) {
         const country = pickCountry(q);
         const result = db.prepare(`
             UPDATE members SET
-                status='inactive', status_reason=?, user_id=?, customerid=?,
+                status='inactive', status_reason=?, user_id=?,
                 country=?, updated_at=datetime('now')
-            WHERE membership_number=?
-        `).run(q.statusReason || null, q.userId || null, pickCustomerId(req), country, q.memberNumber);
+            WHERE membership_number=? AND customerid=?
+        `).run(q.statusReason || null, q.userId || null, country, q.memberNumber, pickCustomerId(req) || '');
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
 
@@ -432,16 +433,16 @@ export function registerUnderwriting(app) {
                 surname=?, second_name=?, third_name=?, other_names=?,
                 id_number=?, nhif_number=?, staff_number=?,
                 dob=?, gender=?, phone_number=?, email_address=?,
-                user_id=?, customerid=?, country=?,
+                user_id=?, country=?,
                 updated_at=datetime('now')
-            WHERE membership_number=?
+            WHERE membership_number=? AND customerid=?
         `).run(
             q.clnCatCode, q.familyCode, q.memType,
             q.surname, q.secondName, q.thirdName || null, q.otherName || null,
             q.idNumber || null, q.nhifNumber || null, q.staffNumber || null,
             q.dob, q.gender, q.phone_number || null, q.email_address || null,
-            q.userId || null, pickCustomerId(req), country,
-            q.membershipNumber,
+            q.userId || null, country,
+            q.membershipNumber, pickCustomerId(req) || '',
         );
         return reply.send(smartOK(q.membershipNumber, result.changes));
     });

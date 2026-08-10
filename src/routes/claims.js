@@ -12,13 +12,17 @@ export function registerClaims(app) {
         const limit    = parseInt(q.limit || '100', 10);
         const isUpdate = q.isUpdate === 'true';
         const country  = pickCountry(q) || 'KE';
+        const cust     = pickCustomerId(req) || '';
 
+        // Tenant isolation: a claim seeded for CUST-A is only served to
+        // CUST-A. Seeds with an empty customerid are tenant-agnostic
+        // (visible to any tenant) so pre-isolation seeds keep working.
         const rows = db.prepare(`
             SELECT claim_id, payload FROM seeded_claims
-            WHERE status = 'ready' AND country = ?
+            WHERE status = 'ready' AND country = ? AND (customerid = ? OR customerid = '')
             ORDER BY claim_id ASC
             LIMIT ?
-        `).all(country, limit);
+        `).all(country, cust, limit);
 
         if (isUpdate) {
             const stmt = db.prepare(`UPDATE seeded_claims SET status='picked', picked_at=datetime('now') WHERE claim_id=?`);

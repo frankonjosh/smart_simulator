@@ -11,8 +11,8 @@ export function registerSimHelpers(app) {
             copays: db.prepare('SELECT * FROM copays LIMIT 200').all(),
             batches: db.prepare('SELECT * FROM batches LIMIT 200').all(),
             money_movements: db.prepare('SELECT * FROM money_movements LIMIT 200').all(),
-            seeded_claims: db.prepare('SELECT claim_id, status, picked_at, country FROM seeded_claims LIMIT 200').all(),
-            seeded_preauths: db.prepare('SELECT preauth_id, status, picked_at, country FROM seeded_preauths LIMIT 200').all(),
+            seeded_claims: db.prepare('SELECT claim_id, status, picked_at, country, customerid FROM seeded_claims LIMIT 200').all(),
+            seeded_preauths: db.prepare('SELECT preauth_id, status, picked_at, country, customerid FROM seeded_preauths LIMIT 200').all(),
         });
     });
 
@@ -20,24 +20,29 @@ export function registerSimHelpers(app) {
     // Uses payload.claim_id as the row PK so markback (which addresses
     // by the payload's claim_id) can find the row later.
     app.post('/sim/seed/claim', async (req, reply) => {
-        const { country = 'KE', payload } = req.body || {};
+        // customerid scopes which tenant's /claims/edi poll sees this claim.
+        // Default '' = tenant-agnostic seed (visible to any customerid), so
+        // old-style seeds without a customerid keep working.
+        const { country = 'KE', customerid = '', payload } = req.body || {};
         if (!payload) return reply.status(400).send({ error: 'missing payload' });
         if (!payload.claim_id) return reply.status(400).send({ error: 'missing payload.claim_id' });
-        db.prepare(`INSERT INTO seeded_claims (claim_id, payload, country) VALUES (?, ?, ?)`)
-          .run(payload.claim_id, JSON.stringify(payload), country);
-        return reply.send({ claim_id: payload.claim_id, country });
+        db.prepare(`INSERT INTO seeded_claims (claim_id, payload, country, customerid) VALUES (?, ?, ?, ?)`)
+          .run(payload.claim_id, JSON.stringify(payload), country, customerid || '');
+        return reply.send({ claim_id: payload.claim_id, country, customerid: customerid || '' });
     });
 
     // POST /sim/seed/preauth — insert one seeded preauth.
     // Uses payload's Id/id as the row PK so markback can find it.
     app.post('/sim/seed/preauth', async (req, reply) => {
-        const { country = 'KE', payload } = req.body || {};
+        // customerid scopes which tenant's /preauth/fetch sees this preauth.
+        // Default '' = tenant-agnostic seed (visible to any customerid).
+        const { country = 'KE', customerid = '', payload } = req.body || {};
         if (!payload) return reply.status(400).send({ error: 'missing payload' });
         const preauthId = payload.Id || payload.id;
         if (!preauthId) return reply.status(400).send({ error: 'missing payload.Id' });
-        db.prepare(`INSERT INTO seeded_preauths (preauth_id, payload, country) VALUES (?, ?, ?)`)
-          .run(preauthId, JSON.stringify(payload), country);
-        return reply.send({ preauth_id: preauthId, country });
+        db.prepare(`INSERT INTO seeded_preauths (preauth_id, payload, country, customerid) VALUES (?, ?, ?, ?)`)
+          .run(preauthId, JSON.stringify(payload), country, customerid || '');
+        return reply.send({ preauth_id: preauthId, country, customerid: customerid || '' });
     });
 
     // POST /sim/reset — nuke every table (idempotent, dev-only).

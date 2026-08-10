@@ -18,7 +18,7 @@ export function registerCopay(app) {
                 integ_prov_code, integ_service_code, copay_type, amount,
                 customerid, country
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(integ_scheme_code, integ_cat_code, integ_ben_code, integ_prov_code, integ_service_code)
+            ON CONFLICT(customerid, integ_scheme_code, integ_cat_code, integ_ben_code, integ_prov_code, integ_service_code)
             DO UPDATE SET
                 copay_type=excluded.copay_type,
                 amount=excluded.amount,
@@ -38,7 +38,7 @@ export function registerCopay(app) {
             b.integ_service_code || '',
             b.copay_type != null ? parseInt(b.copay_type, 10) : null,
             b.amount != null ? parseFloat(b.amount) : null,
-            pickCustomerId(req),
+            pickCustomerId(req) || '',
             country,
         );
         return reply.send(smartOK(b.integ_scheme_code || 'XXXXXX', result.changes));
