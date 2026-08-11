@@ -14,6 +14,7 @@ import { registerRemittance } from './routes/remittance.js';
 import { registerClaims } from './routes/claims.js';
 import { registerPreauth } from './routes/preauth.js';
 import { registerSimHelpers } from './routes/sim.js';
+import { registerUi } from './routes/ui.js';
 import { registerEntra } from './routes/entra.js';
 import { info } from './util/log.js';
 
@@ -40,6 +41,7 @@ app.addHook('onResponse', async (req, reply) => {
 // simulating.
 app.get('/health', async (_req, reply) => reply.send({ status: 'ok', service: 'curis-smart-simulator' }));
 registerSimHelpers(app);
+registerUi(app);
 registerEntra(app);
 
 // ── SMART API V2 shape: /api/v2/:customerid/... ──────────────────────────
