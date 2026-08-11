@@ -157,7 +157,7 @@ var CLAIM_TEMPLATE = {
 // Curis's pre-auth view reads these exact keys: requested_amt (NOT
 // requested_amount), prov_name (a display name, not a code — the view
 // doesn't resolve providers), patient_name, underlying_condition, and
-// each item's `service` + `amount`. member_number/integ_scheme_code
+// each item's service + amount fields. member_number/integ_scheme_code
 // still identify the member for adjudication.
 var PREAUTH_TEMPLATE = {
   Id: 5001,
