@@ -110,7 +110,7 @@ const PAGE = `<!doctype html>
         <div class="field"><label>customerid (blank = all tenants)</label><input type="text" id="p_cust" value=""></div>
       </div>
       <div class="field">
-        <label>payload JSON (must include <code>Id</code>)</label>
+        <label>payload JSON — needs <code>Id</code>; Curis displays <code>requested_amt</code>, <code>prov_name</code>, <code>patient_name</code> and each item's <code>service</code>/<code>amount</code></label>
         <textarea id="p_payload"></textarea>
       </div>
       <div class="btnrow"><button onclick="seedPreauth()">Seed pre-auth</button></div>
@@ -154,14 +154,22 @@ var CLAIM_TEMPLATE = {
     line_items: [ { prov_item_code: "CONS", prov_item_name: "Consultation", quantity: 1, amount: 2000, unit_price: 2000, charge_date: "2026-08-10", service_group: "consultation" } ]
   } ]
 };
+// Curis's pre-auth view reads these exact keys: requested_amt (NOT
+// requested_amount), prov_name (a display name, not a code — the view
+// doesn't resolve providers), patient_name, underlying_condition, and
+// each item's `service` + `amount`. member_number/integ_scheme_code
+// still identify the member for adjudication.
 var PREAUTH_TEMPLATE = {
   Id: 5001,
   member_number: "CLAUDE-CORP-MEM-00001",
+  patient_name: "Jane Doe",
+  prov_name: "Claude General Hospital",
+  underlying_condition: "Acute appendicitis",
+  requested_amt: 45000,
   integ_scheme_code: "claude-scheme-2026",
   provider_code: "claude-hospital",
   benefit_code: "inpatient",
-  requested_amount: 45000,
-  items: [ { id: 1, description: "Admission", amount: 45000 } ]
+  items: [ { id: 1, service: "Inpatient admission", amount: 45000 } ]
 };
 
 function j(o){ return JSON.stringify(o, null, 2); }
