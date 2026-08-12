@@ -15,6 +15,14 @@ export function registerSimHelpers(app) {
             seeded_preauths: db.prepare('SELECT preauth_id, status, picked_at, country, customerid FROM seeded_preauths LIMIT 200').all(),
             card_reprints: db.prepare('SELECT * FROM card_reprints LIMIT 200').all(),
             fingerprint_removals: db.prepare('SELECT * FROM fingerprint_removals LIMIT 200').all(),
+            benefit_rules: db.prepare('SELECT * FROM benefit_rules LIMIT 200').all(),
+            batch_invoices: db.prepare('SELECT * FROM batch_invoices LIMIT 200').all(),
+            batch_invoice_tracking: db.prepare('SELECT * FROM batch_invoice_tracking LIMIT 200').all(),
+            batch_payments: db.prepare('SELECT * FROM batch_payments LIMIT 200').all(),
+            preauth_item_markbacks: db.prepare('SELECT * FROM preauth_item_markbacks LIMIT 200').all(),
+            preauth_item_markback_items: db.prepare('SELECT * FROM preauth_item_markback_items LIMIT 200').all(),
+            preauth_markbacks: db.prepare('SELECT * FROM preauth_markbacks LIMIT 200').all(),
+            claim_status_acks: db.prepare('SELECT * FROM claim_status_acks LIMIT 200').all(),
         });
     });
 
