@@ -13,6 +13,8 @@ export function registerSimHelpers(app) {
             money_movements: db.prepare('SELECT * FROM money_movements LIMIT 200').all(),
             seeded_claims: db.prepare('SELECT claim_id, status, picked_at, country, customerid FROM seeded_claims LIMIT 200').all(),
             seeded_preauths: db.prepare('SELECT preauth_id, status, picked_at, country, customerid FROM seeded_preauths LIMIT 200').all(),
+            card_reprints: db.prepare('SELECT * FROM card_reprints LIMIT 200').all(),
+            fingerprint_removals: db.prepare('SELECT * FROM fingerprint_removals LIMIT 200').all(),
         });
     });
 
