@@ -52,3 +52,16 @@ Every non-/oauth call must carry `Authorization: Bearer <token>`.
 ## Reset
 
     rm -rf data && npm start
+
+## Corporate FT stand-in
+
+Curis sends signed payment batches here when a tenant pays through Corporate FT
+(`CORPORATE_FT_URL`, default `http://localhost:6021/corporate-ft`).
+
+    POST /corporate-ft/instructions   {instruction_ref, lines: [{line_ref, amount, account_number, ...}]}
+    GET  /corporate-ft/lines/:ref     the outcome of one line
+
+The outcome follows the account number's last digit, so every path can be walked:
+**9** fails ("Account closed"); **8** is not known yet, and the first status enquiry
+answers paid; anything else is paid with an `FT…` reference. A line already paid, or
+not known yet, is never attempted again — sending it again returns the first answer.

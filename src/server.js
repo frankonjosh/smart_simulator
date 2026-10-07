@@ -16,6 +16,7 @@ import { registerPreauth } from './routes/preauth.js';
 import { registerSimHelpers } from './routes/sim.js';
 import { registerUi } from './routes/ui.js';
 import { registerEntra } from './routes/entra.js';
+import { registerCorporateFT } from './routes/corporate-ft.js';
 import { info } from './util/log.js';
 
 const PORT = Number(process.env.PORT || 6021);
@@ -43,6 +44,7 @@ app.get('/health', async (_req, reply) => reply.send({ status: 'ok', service: 'c
 registerSimHelpers(app);
 registerUi(app);
 registerEntra(app);
+registerCorporateFT(app);
 
 // ── SMART API V2 shape: /api/v2/:customerid/... ──────────────────────────
 // Everything the SMART Postman collection + real-SMART clients send
