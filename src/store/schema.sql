@@ -322,18 +322,22 @@ CREATE TABLE IF NOT EXISTS tokens (
     expires_at  TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS ft_lines (
-    line_ref        TEXT PRIMARY KEY,
-    instruction_ref TEXT NOT NULL,
-    amount          REAL NOT NULL DEFAULT 0,
-    account_number  TEXT NOT NULL DEFAULT '',
-    account_name    TEXT NOT NULL DEFAULT '',
-    bank_code       TEXT NOT NULL DEFAULT '',
-    branch_code     TEXT NOT NULL DEFAULT '',
-    status          TEXT NOT NULL,
-    reference       TEXT NOT NULL DEFAULT '',
-    reason          TEXT NOT NULL DEFAULT '',
-    paid_on         TEXT NOT NULL DEFAULT '',
-    attempts        INTEGER NOT NULL DEFAULT 1,
-    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+CREATE TABLE IF NOT EXISTS kcb_payments (
+    rrn                   TEXT PRIMARY KEY,
+    request_id            TEXT NOT NULL,
+    merchant_id           TEXT NOT NULL,
+    company_code          TEXT NOT NULL,
+    transaction_type      TEXT NOT NULL,
+    debit_account         TEXT NOT NULL,
+    amount                REAL NOT NULL,
+    currency              TEXT NOT NULL,
+    beneficiary_account   TEXT NOT NULL,
+    beneficiary_bank_code TEXT NOT NULL,
+    beneficiary_name      TEXT NOT NULL,
+    narration             TEXT NOT NULL,
+    outcome               TEXT NOT NULL,
+    message               TEXT NOT NULL DEFAULT '',
+    ft_reference          TEXT NOT NULL DEFAULT '',
+    status_checks         INTEGER NOT NULL DEFAULT 0,
+    created_at            TEXT NOT NULL
 );

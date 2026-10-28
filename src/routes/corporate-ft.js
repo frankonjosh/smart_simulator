@@ -1,84 +1,186 @@
-// Corporate FT stand-in. Curis sends one instruction per batch, one line per
-// voucher, keyed by the voucher number. The outcome follows the account
-// number's last digit so every path can be exercised:
-//   ends in 9 → failed ("Account closed")
-//   ends in 8 → not known yet; the first status enquiry then answers paid
-//   otherwise → paid, with an FT reference
-// A line already paid, or not known yet, is never attempted again — sending it
-// again returns the first answer, the way a bank refuses a duplicate.
+// KCB Corporate FT stand-in, shaped like KCB's "Buni" Corporate FT API v2 and
+// mounted under /kcb so Curis points at http://localhost:6021/kcb:
+//   POST /kcb/token?grant_type=client_credentials   Basic consumer key:secret
+//   POST /kcb/ft/v2/1.0.0/api/corporate             multipart: payload + requestSignature
+// The payload's action picks DISBURSEMENT, TRXSTATUS or ACCOUNTVALIDATION.
+//
+// A disbursement is only "received" when sent; its result is read by
+// TRXSTATUS. The beneficiary account's last digit picks the result so every
+// path can be exercised:
+//   ends in 9 → FAILED ("Invalid beneficiary account")
+//   ends in 8 → PENDING until the second status check, then SUCCESS
+//   otherwise → SUCCESS, once 3 seconds have passed since it was received
+// A repeated retrievalRefNumber is refused, as KCB does.
 import crypto from 'node:crypto';
 import { db } from '../store/db.js';
-import { info } from '../util/log.js';
+import { info, warn } from '../util/log.js';
 
-const ftReference = () => 'FT' + crypto.randomInt(1_000_000_000, 9_999_999_999).toString();
-const today = () => new Date().toISOString().slice(0, 10);
+const CONSUMER_KEY = process.env.KCB_CONSUMER_KEY || 'sim-key';
+const CONSUMER_SECRET = process.env.KCB_CONSUMER_SECRET || 'sim-secret';
+const SIGNING_KEY = process.env.KCB_SIGNING_KEY || 'sim-signing-key';
+const SIGNATURE_MODE = process.env.KCB_SIGNATURE_MODE || 'append';
+const SIGNATURE_ENCODING = process.env.KCB_SIGNATURE_ENCODING || 'hex';
+const LIMIT = Number(process.env.KCB_LIMIT || 5_000_000);
+const SETTLE_MS = 3000;
 
-function decide(line) {
-    const last = String(line.account_number || '').trim().slice(-1);
-    if (last === '9') return { status: 'failed', reason: 'Account closed' };
-    if (last === '8') return { status: 'unknown' };
-    return { status: 'paid', reference: ftReference(), paid_on: today() };
+const tokens = new Map(); // token → expiry (ms)
+
+const ftReference = () => 'FT' + crypto.randomInt(10_000, 99_999) + crypto.randomBytes(3).toString('hex').toUpperCase();
+
+function sign(...fields) {
+    const raw = fields.map((f) => (f === undefined || f === null ? '' : String(f))).join('');
+    if (SIGNATURE_MODE === 'hmac') {
+        return crypto.createHmac('sha512', SIGNING_KEY).update(raw).digest(SIGNATURE_ENCODING);
+    }
+    const salted = SIGNATURE_MODE === 'prepend' ? SIGNING_KEY + raw : raw + SIGNING_KEY;
+    return crypto.createHash('sha512').update(salted).digest(SIGNATURE_ENCODING);
 }
 
-function toOutcome(r) {
-    const o = { line_ref: r.line_ref, status: r.status };
-    if (r.reference) o.reference = r.reference;
-    if (r.reason) o.reason = r.reason;
-    if (r.paid_on) o.paid_on = r.paid_on;
-    return o;
+const refused = (description) => ({
+    statusCode: '1', statusMessage: 'Error', statusDescription: `Validation failed: ${description}`, merchantID: null,
+});
+
+const fault = { fault: { code: 900901, message: 'Invalid Credentials', description: 'Invalid Credentials. Make sure you have provided the correct security credentials' } };
+
+function decide(account) {
+    const last = String(account || '').trim().slice(-1);
+    if (last === '9') return { outcome: 'FAILED', message: 'Invalid beneficiary account' };
+    if (last === '8') return { outcome: 'PENDING', message: 'Pending' };
+    return { outcome: 'SUCCESS', message: 'Processed Successfully' };
 }
 
 export function registerCorporateFT(app) {
-    const find = db.prepare('SELECT * FROM ft_lines WHERE line_ref = ?');
-    const save = db.prepare(`
-        INSERT INTO ft_lines (line_ref, instruction_ref, amount, account_number, account_name, bank_code,
-                              branch_code, status, reference, reason, paid_on)
-        VALUES (@line_ref, @instruction_ref, @amount, @account_number, @account_name, @bank_code,
-                @branch_code, @status, @reference, @reason, @paid_on)
-        ON CONFLICT(line_ref) DO UPDATE SET
-            instruction_ref = excluded.instruction_ref, amount = excluded.amount,
-            account_number = excluded.account_number, account_name = excluded.account_name,
-            bank_code = excluded.bank_code, branch_code = excluded.branch_code, status = excluded.status,
-            reference = excluded.reference, reason = excluded.reason, paid_on = excluded.paid_on,
-            attempts = ft_lines.attempts + 1, updated_at = datetime('now')`);
+    const find = db.prepare('SELECT * FROM kcb_payments WHERE rrn = ?');
+    const insert = db.prepare(`
+        INSERT INTO kcb_payments (rrn, request_id, merchant_id, company_code, transaction_type, debit_account, amount,
+                                  currency, beneficiary_account, beneficiary_bank_code, beneficiary_name, narration,
+                                  outcome, message, created_at)
+        VALUES (@rrn, @request_id, @merchant_id, @company_code, @transaction_type, @debit_account, @amount,
+                @currency, @beneficiary_account, @beneficiary_bank_code, @beneficiary_name, @narration,
+                @outcome, @message, @created_at)`);
+    const checked = db.prepare('UPDATE kcb_payments SET status_checks = status_checks + 1 WHERE rrn = ?');
+    const settle = db.prepare('UPDATE kcb_payments SET outcome = ?, message = ?, ft_reference = ? WHERE rrn = ?');
 
-    app.post('/corporate-ft/instructions', async (req, reply) => {
-        const body = req.body || {};
-        const lines = Array.isArray(body.lines) ? body.lines : [];
-        if (!body.instruction_ref || lines.length === 0) {
-            return reply.code(400).send({ error: 'instruction_ref and at least one line are required' });
+    function disburse(p) {
+        const required = ['requestId', 'retrievalRefNumber', 'companyCode', 'transactionType', 'primaryAccountNumber',
+            'amount', 'amountCurrency', 'beneficiaryAccount', 'beneficiaryBankCode', 'beneficiaryName', 'narration'];
+        if (required.some((k) => !String(p[k] ?? '').trim()) || String(p.retrievalRefNumber).length > 16 ||
+            String(p.beneficiaryName).length > 35 || String(p.narration).length > 35 || !(Number(p.amount) > 0)) {
+            return refused('Invalid crucial param');
         }
-        const out = [];
-        for (const l of lines) {
-            const prior = find.get(l.line_ref);
-            if (prior && (prior.status === 'paid' || prior.status === 'unknown')) {
-                out.push(toOutcome(prior));
-                continue;
+        if (find.get(p.retrievalRefNumber)) {
+            return { ...refused('Retrieval RefNumber already exist'), retrievalRefNumber: p.retrievalRefNumber };
+        }
+        if (Number(p.amount) > LIMIT) {
+            return { ...refused('Transaction failed due to limit rule'), retrievalRefNumber: p.retrievalRefNumber };
+        }
+        const d = decide(p.beneficiaryAccount);
+        const merchantId = `${p.transactionType}${Date.now()}${p.retrievalRefNumber}`;
+        insert.run({
+            rrn: p.retrievalRefNumber, request_id: p.requestId, merchant_id: merchantId, company_code: p.companyCode,
+            transaction_type: p.transactionType, debit_account: p.primaryAccountNumber, amount: Number(p.amount),
+            currency: p.amountCurrency, beneficiary_account: p.beneficiaryAccount,
+            beneficiary_bank_code: p.beneficiaryBankCode, beneficiary_name: p.beneficiaryName, narration: p.narration,
+            outcome: d.outcome, message: d.message, created_at: new Date().toISOString(),
+        });
+        info('kcb disbursement received', { rrn: p.retrievalRefNumber, type: p.transactionType, will_be: d.outcome });
+        return {
+            statusCode: '0', statusMessage: 'Success', statusDescription: 'Request received for processing',
+            merchantID: merchantId, retrievalRefNumber: p.retrievalRefNumber,
+        };
+    }
+
+    function status(p) {
+        const row = find.get(p.retrievalRefNumber);
+        if (!row) return refused('Transaction not found');
+        checked.run(row.rrn);
+        let current = row.outcome;
+        if (row.outcome === 'SUCCESS' && Date.now() - Date.parse(row.created_at) < SETTLE_MS) {
+            current = 'PENDING';
+        }
+        if (row.outcome === 'PENDING' && row.status_checks + 1 >= 2) {
+            current = 'SUCCESS';
+            settle.run('SUCCESS', 'Processed Successfully', '', row.rrn);
+            row.message = 'Processed Successfully';
+        }
+        let ref = row.ft_reference;
+        if (current === 'SUCCESS' && !ref) {
+            ref = ftReference();
+            settle.run('SUCCESS', row.message, ref, row.rrn);
+        }
+        const out = {
+            companyCode: row.company_code, debitAccountNumber: row.debit_account, debitAmount: row.amount,
+            creditAccountNumber: row.beneficiary_account, createdOn: row.created_at.replace('Z', '+00:00'),
+            statusMessage: current === 'PENDING' ? 'Pending' : row.message, transactionType: row.transaction_type,
+            merchantId: row.merchant_id, beneficiaryName: row.beneficiary_name, retrievalRefNumber: row.rrn,
+            amountCurrency: row.currency, status: current,
+        };
+        if (current === 'SUCCESS') out.ftReference = ref;
+        return out;
+    }
+
+    function validate(p) {
+        const acct = String(p.primaryAccountNumber || '').trim();
+        if (!acct || !String(p.beneficiaryBankCode || '').trim()) return refused('Invalid crucial param');
+        return {
+            responsePayload: {
+                accountInfo: {
+                    localCurrency: 'KES',
+                    accountStatus: acct.endsWith('9') ? 'CLOSED' : 'OPEN',
+                    accountName: `SIM ACCOUNT ${acct.slice(-4)}`,
+                },
+            },
+        };
+    }
+
+    app.register(async (scoped) => {
+        // KCB takes multipart forms; read them with the platform's own parser.
+        scoped.addContentTypeParser('multipart/form-data', { parseAs: 'buffer' }, async (req, body) => {
+            const form = await new Response(body, { headers: { 'content-type': req.headers['content-type'] } }).formData();
+            const out = {};
+            for (const [k, v] of form.entries()) out[k] = typeof v === 'string' ? v : '[file]';
+            return out;
+        });
+
+        scoped.post('/token', async (req, reply) => {
+            const [scheme, encoded] = String(req.headers.authorization || '').split(' ');
+            const [key, secret] = scheme === 'Basic' && encoded ? Buffer.from(encoded, 'base64').toString().split(':') : [];
+            if (req.query.grant_type !== 'client_credentials' || key !== CONSUMER_KEY || secret !== CONSUMER_SECRET) {
+                return reply.code(401).send({ error: 'invalid_client', error_description: 'A valid OAuth client could not be found for client_id' });
             }
-            const d = decide(l);
-            const row = {
-                line_ref: l.line_ref, instruction_ref: body.instruction_ref, amount: Number(l.amount) || 0,
-                account_number: l.account_number || '', account_name: l.account_name || '',
-                bank_code: l.bank_code || '', branch_code: l.branch_code || '',
-                status: d.status, reference: d.reference || '', reason: d.reason || '', paid_on: d.paid_on || '',
-            };
-            save.run(row);
-            out.push(toOutcome(row));
-        }
-        info('corporate-ft instruction', { instruction_ref: body.instruction_ref, lines: out.map((o) => `${o.line_ref}=${o.status}`) });
-        return { instruction_ref: body.instruction_ref, lines: out };
-    });
+            const token = crypto.randomBytes(24).toString('base64url');
+            tokens.set(token, Date.now() + 3600 * 1000);
+            return { access_token: token, token_type: 'Bearer', expires_in: 3600 };
+        });
 
-    app.get('/corporate-ft/lines/:ref', async (req, reply) => {
-        const row = find.get(req.params.ref);
-        if (!row) return reply.code(404).send({ error: 'no such payment' });
-        if (row.status === 'unknown') {
-            row.status = 'paid';
-            row.reference = ftReference();
-            row.paid_on = today();
-            db.prepare(`UPDATE ft_lines SET status = 'paid', reference = ?, paid_on = ?, updated_at = datetime('now')
-                        WHERE line_ref = ?`).run(row.reference, row.paid_on, row.line_ref);
-        }
-        return toOutcome(row);
-    });
+        scoped.post('/ft/v2/1.0.0/api/corporate', async (req, reply) => {
+            const token = String(req.headers.authorization || '').replace(/^Bearer /, '');
+            if (!tokens.has(token) || tokens.get(token) < Date.now()) {
+                return reply.code(401).send(fault);
+            }
+            let p;
+            try {
+                p = JSON.parse(req.body?.payload ?? '');
+            } catch {
+                return refused('Invalid crucial param');
+            }
+            const signed = p.action === 'DISBURSEMENT'
+                ? sign(p.requestId, p.primaryAccountNumber, p.beneficiaryAccount, p.amount)
+                : sign(p.requestId, p.primaryAccountNumber);
+            if (req.body?.requestSignature !== signed) {
+                warn('kcb signature mismatch', { action: p.action, rrn: p.retrievalRefNumber });
+                return refused('Invalid request signature');
+            }
+            switch (p.action) {
+                case 'DISBURSEMENT':
+                    return disburse(p);
+                case 'TRXSTATUS':
+                    return status(p);
+                case 'ACCOUNTVALIDATION':
+                    return validate(p);
+                default:
+                    return refused('Invalid crucial param');
+            }
+        });
+    }, { prefix: '/kcb' });
 }
