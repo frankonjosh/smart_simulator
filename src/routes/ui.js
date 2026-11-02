@@ -97,7 +97,7 @@ const PAGE = `<!doctype html>
         <div class="field"><label>customerid (blank = all tenants)</label><input type="text" id="c_cust" value=""></div>
       </div>
       <div class="field">
-        <label>payload JSON — <code>integ_scheme_code</code>, <code>member_number</code> &amp; <code>provider_code</code> must already exist in this tenant, or Curis rejects it on ingest</label>
+        <label>payload JSON — <code>integ_scheme_code</code>, <code>member_number</code> &amp; <code>payer_prov_code</code> (the Curis provider code) must already exist in this tenant, or Curis rejects it on ingest</label>
         <textarea id="c_payload"></textarea>
       </div>
       <div class="btnrow"><button onclick="seedClaim()">Seed claim</button></div>
@@ -132,7 +132,8 @@ const PAGE = `<!doctype html>
 <script>
 // Curis's claim ingester parses this exact SMART shape. The scheme
 // (integ_scheme_code), member (member_number/integ_member_number) and
-// provider (provider_code) MUST already exist in the tenant named by
+// provider (payer_prov_code = the Curis provider code, or provider_code =
+// the provider's SMART code) MUST already exist in the tenant named by
 // customerid, or Curis rejects the claim on ingest ("scheme ... not
 // found"). Edit the codes to match your own tenant's data.
 var CLAIM_TEMPLATE = {
@@ -141,7 +142,8 @@ var CLAIM_TEMPLATE = {
   member_number: "CLAUDE-CORP-MEM-00001",
   integ_member_number: "CLAUDE-CORP-MEM-00001",
   integ_scheme_code: "claude-scheme-2026",
-  provider_code: "claude-hospital",
+  provider_code: "SKSP_0001",
+  payer_prov_code: "PRV-001",
   visit_start: "2026-08-10",
   gross_amount: 2000,
   amount: 2000,
@@ -160,16 +162,19 @@ var CLAIM_TEMPLATE = {
 // each item's service + amount fields. member_number/integ_scheme_code
 // still identify the member for adjudication.
 var PREAUTH_TEMPLATE = {
-  Id: 5001,
-  member_number: "CLAUDE-CORP-MEM-00001",
-  patient_name: "Jane Doe",
-  prov_name: "Claude General Hospital",
-  underlying_condition: "Acute appendicitis",
-  requested_amt: 45000,
-  integ_scheme_code: "claude-scheme-2026",
-  provider_code: "claude-hospital",
-  benefit_code: "inpatient",
-  items: [ { id: 1, service: "Inpatient admission", amount: 45000 } ]
+  preauthId: 5001,
+  preauthNo: "OPCLAUDE1",
+  memberNumber: "CLAUDE-CORP-MEM-00001",
+  integMemberNumber: "CLAUDE-CORP-MEM-00001",
+  memberName: "Jane Doe",
+  providerCode: "claude-hospital",
+  providerName: "Claude General Hospital",
+  benCode: "1",
+  requestedAmt: 45000,
+  serviceType: "2",
+  status: "Pending",
+  diagnosis: [ { code: "K35", name: "Acute appendicitis", isPrimary: true } ],
+  lineItems: [ { id: 1, preauthId: 5001, itemName: "Inpatient admission", itemCode: "ADM1", requestedAmt: 45000, quantity: 1, unitAmount: 45000 } ]
 };
 
 function j(o){ return JSON.stringify(o, null, 2); }

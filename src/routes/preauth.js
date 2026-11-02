@@ -4,98 +4,78 @@ import { info } from '../util/log.js';
 import { pickCountry, pickCustomerId } from '../util/params.js';
 
 export function registerPreauth(app) {
-    // §2.21  GET /preauth/fetch — poll pre-auth requests from SMART.
-    // Query params: countrycode, customerid, page, status, isInteg, limit.
-    // Response: array of pre-auth objects (opaque JSON payloads seeded via /sim/seed/preauth).
-    // Guide says "response is a list of this json data" with rich per-preauth fields —
-    // those fields live inside the seeded payload JSON, not in a wrapper; the sim
-    // returns { preauths: [...] } which Curis consumes.
-    app.get('/preauth/fetch', async (req, reply) => {
-        const q = req.query;
-        const limit  = parseInt(q.limit || '100', 10);
-        const status = q.status != null ? String(q.status) : null;   // 0/1/2/3/4
-        const country = pickCountry(q) || 'KE';
+    // Guide §4.1 (October 2026)  GET /new/preauth/fetch — new pre-auth requests.
+    // Customer and country come as headers (customerid, countrycode); no paging.
+    // Response: { responseType: "SUCCESS", payLoad: [ ...requests ], successful: true }.
+    // Each request is the seeded payload as-is (guide shape: preauthId, memberNumber, lineItems, ...).
+    app.get('/new/preauth/fetch', async (req, reply) => {
+        const country = pickCountry(req.headers) || pickCountry(req.query) || 'KE';
         const cust    = pickCustomerId(req) || '';
 
-        // Filter by status if provided (0=pending,1=approved,2=declined,3=partial,4=all except pending).
-        // Seeded_preauths.status tracks pick lifecycle (ready/picked/failed), not approval status —
-        // return 'ready' rows unless status=4 (return all except pending, i.e. all picked).
         // Tenant isolation: a preauth seeded for CUST-A is only served to
         // CUST-A. Empty customerid = tenant-agnostic (pre-isolation seeds).
         const rows = db.prepare(`
             SELECT preauth_id, payload FROM seeded_preauths
             WHERE status = 'ready' AND country = ? AND (customerid = ? OR customerid = '')
             ORDER BY preauth_id ASC
-            LIMIT ?
-        `).all(country, cust, limit);
+        `).all(country, cust);
 
         const preauths = rows.map((r) => JSON.parse(r.payload));
-        info('preauth fetched', { count: preauths.length, customerid: pickCustomerId(req), page: q.page, status });
-        // Guide §2.21: "This response is a list of this json data." — bare array.
-        return reply.send(preauths);
+        info('preauth fetched', { count: preauths.length, customerid: cust, country });
+        return reply.send({
+            responseType: 'SUCCESS', generatedId: null, generatedCode: null,
+            payLoad: preauths,
+            exception: null, exceptionClass: null, message: null, errorCode: null,
+            warningCode: null, messageTracker: null, successful: true,
+        });
     });
 
-    // §2.21.5  POST /preauth/item/markback — per-item adjudication feedback.
-    // Query params: countrycode, customerid.
-    // Body: { id: integer, items: [ { id, status, Approved_amt, Payer_comment } ], Valid_to: string }
-    app.post('/preauth/item/markback', async (req, reply) => {
-        const q = req.query;
+    // Guide §4.2  POST /preauth/process — the payer's decision on a pre-auth.
+    // Query: customerid, country. Body: { requestType, comments, preauthId, userId,
+    // processModel: [ { requestId, preauthId, visitId, approvalAmount, isApprove, isReject, userId, comments } ] }
+    // Response is wrapped in "body", like the markback.
+    app.post('/preauth/process', async (req, reply) => {
         const b = req.body || {};
-        const country = pickCountry(q) || 'KE';
-
-        // Insert the parent markback record.
-        // Guide §2.21.5 table says Valid_to / Approved_amt / Payer_comment
-        // (capitalized); SMART's own Postman example uses lowercase. Real
-        // SMART's casing is unconfirmed (ask-SMART list) — accept both.
-        const parent = db.prepare(`
-            INSERT INTO preauth_item_markbacks (preauth_id, valid_to, customerid, country)
-            VALUES (?, ?, ?, ?)
-        `).run(
-            b.id != null ? parseInt(b.id, 10) : null,
-            b.Valid_to || b.valid_to || null,
-            pickCustomerId(req),
-            country,
-        );
-        const markbackId = parent.lastInsertRowid;
-
-        // Insert each item in the items[] array.
-        const itemStmt = db.prepare(`
-            INSERT INTO preauth_item_markback_items (markback_id, item_id, status, approved_amt, payer_comment)
-            VALUES (?, ?, ?, ?, ?)
-        `);
-        const items = Array.isArray(b.items) ? b.items : [];
-        for (const it of items) {
-            const approvedAmt = it.Approved_amt ?? it.approved_amt;
-            itemStmt.run(
-                markbackId,
-                it.id != null ? parseInt(it.id, 10) : null,
-                it.status != null ? parseInt(it.status, 10) : null,
-                approvedAmt != null ? String(approvedAmt) : null,
-                it.Payer_comment || it.payer_comment || null,
-            );
+        const country = pickCountry(req.query) || 'KE';
+        const ok = b.preauthId != null && ['APPROVAL', 'DECLINE', 'PARTIAL'].includes(b.requestType)
+            && Array.isArray(b.processModel);
+        if (ok) {
+            db.prepare(`
+                INSERT INTO preauth_decisions (preauth_id, request_type, body, customerid, country)
+                VALUES (?, ?, ?, ?, ?)
+            `).run(parseInt(b.preauthId, 10), b.requestType, JSON.stringify(b), pickCustomerId(req), country);
         }
-
-        info('preauth item markback', { preauth_id: b.id, items: items.length });
-        return reply.send(smartOK(String(b.id ?? ''), parent.changes));
+        info('preauth decision', { preauthId: b.preauthId, requestType: b.requestType, lines: (b.processModel || []).length });
+        return reply.send({
+            headers: {},
+            body: {
+                responseType: ok ? 'SUCCESS' : 'ERROR', generatedId: null, generatedCode: null,
+                payLoad: ok ? 'Preauth processed' : null,
+                exception: null, exceptionClass: null,
+                message: ok ? null : 'preauthId, requestType (APPROVAL, DECLINE or PARTIAL) and processModel are required',
+                errorCode: null, warningCode: null, messageTracker: null,
+            },
+            statusCodeValue: 200, statusCode: 'OK',
+        });
     });
 
-    // §preauth/markback — pick-status ack (mark fetched preauths as picked/failed).
-    // Query params: countrycode, customerid.
+    // Guide §4.5  POST /preauth/markback — pick-status ack (mark fetched preauths as picked/failed).
+    // Customer and country come as headers (customerid, country).
     // Body: { pick_status: integer, id: integer, pick_comment: string }
+    // Response: { headers: {}, body: { responseType: "SUCCESS", ... }, statusCodeValue: 200, statusCode: "OK" }
     app.post('/preauth/markback', async (req, reply) => {
-        const q = req.query;
         const b = req.body || {};
         const { pick_status, id, pick_comment } = b;
-        const country = pickCountry(q) || 'KE';
+        const country = pickCountry(req.headers) || pickCountry(req.query) || 'KE';
 
         const newStatus = pick_status === 1 ? 'picked' : (pick_status === 2 ? 'failed' : 'ready');
 
         // Update the seeded_preauths lifecycle state.
-        db.prepare(`UPDATE seeded_preauths SET status=?, picked_at=datetime('now') WHERE preauth_id=?`)
+        const updated = db.prepare(`UPDATE seeded_preauths SET status=?, picked_at=datetime('now') WHERE preauth_id=?`)
           .run(newStatus, id);
 
         // Persist the ack audit record including pick_comment.
-        const result = db.prepare(`
+        db.prepare(`
             INSERT INTO preauth_markbacks (preauth_id, pick_status, pick_comment, customerid, country)
             VALUES (?, ?, ?, ?, ?)
         `).run(
@@ -107,6 +87,17 @@ export function registerPreauth(app) {
         );
 
         info('preauth markback', { id, newStatus, pick_comment });
-        return reply.send(smartOK(String(id ?? ''), result.changes));
+        const ok = updated.changes > 0;
+        return reply.send({
+            headers: {},
+            body: {
+                responseType: ok ? 'SUCCESS' : 'ERROR', generatedId: null, generatedCode: null,
+                payLoad: ok ? 'Preauth marked back' : null,
+                exception: null, exceptionClass: null,
+                message: ok ? null : `No preauth with id ${id}`,
+                errorCode: null, warningCode: null, messageTracker: null,
+            },
+            statusCodeValue: 200, statusCode: 'OK',
+        });
     });
 }

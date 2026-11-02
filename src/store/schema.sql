@@ -91,27 +91,6 @@ CREATE TABLE IF NOT EXISTS members (
     PRIMARY KEY (customerid, membership_number)
 );
 
-CREATE TABLE IF NOT EXISTS card_reprints (
-    id             INTEGER PRIMARY KEY AUTOINCREMENT,
-    member_number  TEXT NOT NULL,
-    staff_number   TEXT,
-    user_id        TEXT,
-    customerid     TEXT,
-    reorder_reason TEXT,
-    country        TEXT,
-    created_at     TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS fingerprint_removals (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    member_number TEXT NOT NULL,
-    user_id       TEXT,
-    customerid    TEXT,
-    change_reason TEXT,
-    country       TEXT,
-    created_at    TEXT DEFAULT (datetime('now'))
-);
-
 CREATE TABLE IF NOT EXISTS benefit_rules (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     integ_scheme_code    TEXT NOT NULL,
@@ -148,22 +127,6 @@ CREATE TABLE IF NOT EXISTS benefit_rules (
     customerid           TEXT,
     country              TEXT,
     created_at           TEXT DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS copays (
-    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-    integ_scheme_code  TEXT NOT NULL,
-    integ_cat_code     TEXT,
-    integ_ben_code     TEXT,
-    integ_prov_code    TEXT,
-    integ_service_code TEXT,
-    copay_type         INTEGER,
-    amount             REAL,
-    customerid         TEXT NOT NULL DEFAULT '',   -- §1.3 query param / tenant key
-    country            TEXT,
-    created_at         TEXT DEFAULT (datetime('now')),
-    updated_at         TEXT DEFAULT (datetime('now')),
-    UNIQUE (customerid, integ_scheme_code, integ_cat_code, integ_ben_code, integ_prov_code, integ_service_code)
 );
 
 CREATE TABLE IF NOT EXISTS batches (
@@ -223,25 +186,15 @@ CREATE TABLE IF NOT EXISTS batch_payments (
     created_at              TEXT DEFAULT (datetime('now'))
 );
 
--- §2.21 preauth/item/markback — persists per-item adjudication decisions
-CREATE TABLE IF NOT EXISTS preauth_item_markbacks (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    preauth_id   INTEGER NOT NULL,  -- body: id
-    valid_to     TEXT,              -- body: Valid_to
-    customerid   TEXT,              -- query: customerid
-    country      TEXT,              -- query: countrycode
-    created_at   TEXT DEFAULT (datetime('now'))
-);
-
--- §2.21 preauth/item/markback items[] array rows
-CREATE TABLE IF NOT EXISTS preauth_item_markback_items (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    markback_id     INTEGER NOT NULL,  -- FK → preauth_item_markbacks.id
-    item_id         INTEGER,           -- items[].id (referenceNumber)
-    status          INTEGER,           -- items[].status: 1=approved,2=declined,3=partial
-    approved_amt    TEXT,              -- items[].Approved_amt
-    payer_comment   TEXT,              -- items[].Payer_comment
-    created_at      TEXT DEFAULT (datetime('now'))
+-- Guide §4.2 POST /preauth/process — the payer's decision on a pre-auth.
+CREATE TABLE IF NOT EXISTS preauth_decisions (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    preauth_id    INTEGER NOT NULL,  -- body: preauthId
+    request_type  TEXT,              -- body: APPROVAL | DECLINE | PARTIAL
+    body          TEXT NOT NULL,     -- the whole request, processModel included
+    customerid    TEXT,
+    country       TEXT,
+    created_at    TEXT DEFAULT (datetime('now'))
 );
 
 -- §preauth/markback — persist pick_comment (was missing)

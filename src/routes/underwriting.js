@@ -214,6 +214,7 @@ export function registerUnderwriting(app) {
                 phone_number=excluded.phone_number,
                 email_address=excluded.email_address,
                 country=excluded.country,
+                status='active',
                 updated_at=datetime('now')
         `).run(
             q.membershipNumber, q.clnPolCode, q.clnCatCode, q.familyCode, q.memType,
@@ -227,36 +228,6 @@ export function registerUnderwriting(app) {
         );
         info('member enrolled', { membershipNumber: q.membershipNumber });
         return reply.send(smartOK(q.membershipNumber, result.changes));
-    });
-
-    // §2.6  POST /members/cardreprints — Card Re-print Request
-    app.post('/members/cardreprints', async (req, reply) => {
-        const q = req.query;
-        const country = pickCountry(q);
-        const result = db.prepare(`
-            INSERT INTO card_reprints (member_number, staff_number, user_id, customerid, reorder_reason, country)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `).run(
-            q.memberNumber, q.staffNumber || null, q.userId || null,
-            pickCustomerId(req), q.reorderReason || null, country,
-        );
-        return reply.send(smartOK(q.memberNumber, result.changes));
-    });
-
-    // §2.7  POST /scheme/member/migration — JSON body array
-    app.post('/scheme/member/migration', async (req, reply) => {
-        const items = req.body || [];
-        const cust = pickCustomerId(req) || '';
-        let changes = 0;
-        for (const it of items) {
-            const r = db.prepare(`
-                UPDATE members
-                SET cln_pol_code=?, cln_cat_code=?, updated_at=datetime('now')
-                WHERE membership_number=? AND customerid=?
-            `).run(it.integSchemeCode, it.integCategoryCode, it.integMemberNumber, cust);
-            changes += r.changes;
-        }
-        return reply.send(smartOK(String(items.length), changes));
     });
 
     // §2.8  POST /schemes/renewals — Scheme Renewal Request
@@ -383,19 +354,6 @@ export function registerUnderwriting(app) {
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
 
-    // §2.15.1  POST /bulk/members/activations — Bulk Member Activation
-    app.post('/bulk/members/activations', async (req, reply) => {
-        const q = req.query;
-        const country = pickCountry(q);
-        const result = db.prepare(`
-            UPDATE members SET
-                status='active', status_reason=?, user_id=?,
-                country=?, updated_at=datetime('now')
-            WHERE membership_number=? AND customerid=?
-        `).run(q.statusReason || null, q.userId || null, country, q.memberNumber, pickCustomerId(req) || '');
-        return reply.send(smartOK(q.memberNumber, result.changes));
-    });
-
     // §2.16  POST /members/deactivations — Member De-Activation Request
     app.post('/members/deactivations', async (req, reply) => {
         const q = req.query;
@@ -406,20 +364,6 @@ export function registerUnderwriting(app) {
                 country=?, updated_at=datetime('now')
             WHERE membership_number=? AND customerid=?
         `).run(q.statusReason || null, q.userId || null, country, q.memberNumber, pickCustomerId(req) || '');
-        return reply.send(smartOK(q.memberNumber, result.changes));
-    });
-
-    // §2.17  POST /members/fingerprintremoval — Fingerprint Removal Request
-    app.post('/members/fingerprintremoval', async (req, reply) => {
-        const q = req.query;
-        const country = pickCountry(q);
-        const result = db.prepare(`
-            INSERT INTO fingerprint_removals (member_number, user_id, customerid, change_reason, country)
-            VALUES (?, ?, ?, ?, ?)
-        `).run(
-            q.memberNumber, q.userId || null,
-            pickCustomerId(req), q.change_reason || null, country,
-        );
         return reply.send(smartOK(q.memberNumber, result.changes));
     });
 

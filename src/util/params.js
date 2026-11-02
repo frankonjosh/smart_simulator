@@ -11,5 +11,5 @@ export function pickCountry(q) {
 // that's what real SMART keys on — and fall back to the query spelling
 // (either case) so hand-crafted Postman calls still tag their rows.
 export function pickCustomerId(req) {
-    return req?.params?.customerid || req?.query?.customerid || req?.query?.Customerid || null;
+    return req?.params?.customerid || req?.headers?.customerid || req?.query?.customerid || req?.query?.Customerid || null;
 }

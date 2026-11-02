@@ -25,18 +25,18 @@ Every non-/oauth call must carry `Authorization: Bearer <token>`.
 **Underwriting:** `/schemes`, `/schemes/renewals`, `/schemes/activation`,
 `/scheme/deactivations`, `/benefitCategories`, `/benefits`, `/bulk/benefits`,
 `/benefit/rules`, `/benefit/activation`, `/benefit/deactivation`,
-`/members`, `/members/cardreprints`, `/scheme/member/migration`,
-`/member/renewals`, `/members/categorychange`, `/members/activations`,
-`/bulk/members/activations`, `/members/deactivations`,
-`/members/fingerprintremoval`, `/members/changes`, `/members/moneyaddition`,
+`/members`, `/member/renewals`, `/members/categorychange`, `/members/activations`,
+`/members/deactivations`, `/members/changes`, `/members/moneyaddition`,
 `/members/moneyreduction`.
 
-**Copay + Remittance:** `/copay/setup`, `/edi/open/batch`,
-`/edi/close/batch`, `/edi/batch/invoice/add`, `/edi/batch/invoice/tracking`,
-`/edi/batch/pay`.
+**Remittance:** `/edi/open/batch`, `/edi/close/batch`, `/edi/batch/invoice/add`,
+`/edi/batch/invoice/tracking`, `/edi/batch/pay`.
 
-**Claims + Preauth:** `/claims/edi`, `/claims/edi/status`, `/preauth/fetch`,
-`/preauth/item/markback`, `/preauth/markback`.
+**Claims + Preauth:** `/claims/edi`, `/claims/edi/status`, `/new/preauth/fetch`,
+`/preauth/process`, `/preauth/markback`.
+
+Co-pay setup, card re-print, fingerprint removal, member migration and bulk
+member activation are not in SMART's October 2026 guide and are not offered.
 
 ## Test helpers (not SMART's contract)
 

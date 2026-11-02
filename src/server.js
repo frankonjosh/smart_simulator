@@ -9,7 +9,6 @@ import Fastify from 'fastify';
 import { db } from './store/db.js';
 import { issueToken, requireToken } from './auth/token.js';
 import { registerUnderwriting } from './routes/underwriting.js';
-import { registerCopay } from './routes/copay.js';
 import { registerRemittance } from './routes/remittance.js';
 import { registerClaims } from './routes/claims.js';
 import { registerPreauth } from './routes/preauth.js';
@@ -59,7 +58,6 @@ app.register(async (scoped) => {
 app.register(async (scoped) => {
     scoped.addHook('preHandler', requireToken);
     registerUnderwriting(scoped);
-    registerCopay(scoped);
     registerRemittance(scoped);
     registerClaims(scoped);
     registerPreauth(scoped);
